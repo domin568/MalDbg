@@ -16,42 +16,18 @@ t_GetFinalPathNameByHandleA GetFinalPathNameByHandleA()
     return f_GetFinalPathNameByHandleA;
 }
 
-void ErrorExit(LPTSTR lpszFunction) 
-{ 
-    // Retrieve the system error message for the last-error code
-
-    LPVOID lpMsgBuf;
-    LPVOID lpDisplayBuf;
-    DWORD dw = GetLastError(); 
-
-    FormatMessage(
-        FORMAT_MESSAGE_ALLOCATE_BUFFER | 
-        FORMAT_MESSAGE_FROM_SYSTEM |
-        FORMAT_MESSAGE_IGNORE_INSERTS,
-        NULL,
-        dw,
-        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-        (LPTSTR) &lpMsgBuf,
-        0, NULL );
-
-    // Display the error message and exit the process
-
-    lpDisplayBuf = (LPVOID)LocalAlloc(LMEM_ZEROINIT, 
-        (lstrlen((LPCTSTR)lpMsgBuf) + lstrlen((LPCTSTR)lpszFunction) + 40) * sizeof(TCHAR)); 
-    StringCchPrintf((LPTSTR)lpDisplayBuf, 
-        LocalSize(lpDisplayBuf) / sizeof(TCHAR),
-        TEXT("%s failed with error %d: %s"), 
-        lpszFunction, dw, lpMsgBuf); 
-    MessageBox(NULL, (LPCTSTR)lpDisplayBuf, TEXT("Error"), MB_OK); 
-
-    LocalFree(lpMsgBuf);
-    LocalFree(lpDisplayBuf);
-    ExitProcess(dw); 
+uint64_t parseStringToAddress (std::string toConvert)
+{
+    uint64_t address;
+    sscanf (toConvert.c_str(),"%x",&address);
+    return address;
 }
 
-void breakpointEntryPoint (CREATE_PROCESS_DEBUG_INFO * info)
+void debugger::breakpointEntryPoint (CREATE_PROCESS_DEBUG_INFO * info)
 {
-
+    uint64_t entryRVA = (uint64_t) info->lpStartAddress - (uint64_t) info->lpBaseOfImage;
+    uint64_t entryVA = (uint64_t) info->lpBaseOfImage + (uint64_t) entryRVA;
+    placeBreakpoint (entryVA);
 }
 DWORD debugger::run (std::string fileName)
 {
@@ -65,13 +41,16 @@ DWORD debugger::run (std::string fileName)
 
     if (!CreateProcess (fileName.c_str(),NULL,NULL,NULL,TRUE,DEBUG_PROCESS,NULL,NULL,&si,&pi))
     {
-       ErrorExit(TEXT("CreateProces"));
+       log ("Cannot start debugged process\n",logType::ERR);
+       return 1;
     }
+    debuggedProcessHandle = pi.hProcess;
     while (debuggingActive)
     {
         if (!WaitForDebugEvent (&debugEvent,INFINITE))
         {
-            ErrorExit(TEXT("WaitForDebugEvent"));
+            log ("WaitForDebugEven returned nonzero value\n",logType::ERR);
+            return 2;
         }
         DWORD debugResponse = processDebugEvents(&debugEvent, &debuggingActive);
 
@@ -84,50 +63,218 @@ DWORD debugger::run (std::string fileName)
         
         ContinueDebugEvent (debugEvent.dwProcessId,debugEvent.dwThreadId,debugResponse);
     }
-    printf ("Debugging is not active\n");
     return 0;
 }
-void debugger::parseExecCommands ()
+command * parseCommand (std::string c)
 {
-    std::string command;
+    command * comm = new command ();
+
+    std::regex continueRegex ("^(c|cont|continue)\\s*$");
+    std::regex runRegex ("^(r|run)\\s*$");
+    std::regex exitRegex ("^(e|exit)\\s*$");
+    std::regex softBreakpointRegex ("^(b|br|bp|breakpoint){1}\\s+(0x)?([0-9a-fA-F]+)$");
+    //std::regex softBreakpointRegex ("(b|br|bp|breakpoint)\\s+(0x)?[0-9a-fA-F]+");
+    std::regex hardBreakpointRegex ("(hb|hardware breakpoint)\\s+(0x?[0-9a-fA-F]+)");
+
+    std::smatch continueMatches;
+    std::smatch runMatches;
+    std::smatch exitMatches;
+    std::smatch softBreakpointMatches;
+    std::smatch hardBreakpointMatches;
+
+
+    if (std::regex_search (c, continueMatches, continueRegex))
+    {
+        comm->type = commandType::CONTINUE;
+        return comm;
+    }
+    else if (std::regex_search (c, runMatches, runRegex))
+    {
+        comm->type = commandType::RUN;
+        return comm;   
+    }
+    else if (std::regex_search (c, exitMatches, exitRegex))
+    {
+        comm->type = commandType::EXIT;
+        return comm;   
+    }
+    else if (std::regex_match (c, softBreakpointMatches, softBreakpointRegex))
+    {
+        comm->type = commandType::SOFT_BREAKPOINT;
+        comm->arguments.push_back (softBreakpointMatches[3].str());
+        return comm;
+    }
+
+    comm->type = commandType::UNKNOWN;
+    return comm;
+}
+void debugger::handleCommands(command * currentCommand)
+{
+    if (currentCommand->type == commandType::CONTINUE)
+    {
+        SetEvent (continueDebugEvent);
+        commandModeActive = false;
+    }
+    else if (currentCommand->type == commandType::SOFT_BREAKPOINT)
+    {
+        uint64_t breakpointAddress = parseStringToAddress(currentCommand->arguments[0]);
+        placeBreakpoint (breakpointAddress);
+    }
+    else if (currentCommand->type == commandType::RUN)
+    {
+        if (debuggingActive)
+        {
+            log ("The program is being debugged, running it again\n",logType::WARNING);
+        }
+        SetEvent (continueDebugEvent);
+        debuggingActive = false;
+        debuggerThread.join();
+        debuggingActive = true;
+        debuggerThread = std::thread(debugger::run, this, fileName);
+        commandModeActive = false;
+    }
+    else if (currentCommand->type == commandType::EXIT)
+    {
+        std::lock_guard<std::mutex> l_debuggingActive (m_debuggingActive);
+        debuggerActive = false;
+        debuggingActive = false;
+        SetEvent (continueDebugEvent);
+        debuggerThread.join();
+        commandModeActive = false;
+    }
+    
+}
+void debugger::interactiveCommands ()
+{
+    std::string c;
     while (debuggerActive)
     {
-        printf ("Starts to wait\n");
         WaitForSingleObject (commandEvent,INFINITE);
-        printf ("maldbg > ");
-        std::cin >> command;
-        if (command == "c")
+        commandModeActive = true;
+        while (commandModeActive)
         {
-            SetEvent (continueDebugEvent);
-        }
-        else if (command == "r" && !debuggingActive)
-        {
-            SetEvent (continueDebugEvent);
-            debuggerThread.join();
-            debuggingActive = true;
-            debuggerThread = std::thread(debugger::run, this, fileName);
-        }
-        else if (command == "exit")
-        {
-            std::lock_guard<std::mutex> l_debuggingActive (m_debuggingActive);
-            printf ("[*] Exiting\n");
-            debuggerActive = false;
-            debuggingActive = false;
-            SetEvent (continueDebugEvent);
-            debuggerThread.join();
+            log ("",logType::PROMPT);
+            std::getline(std::cin, c);
+            command * currentCommand = parseCommand (c);
+
+            if (currentCommand->type == commandType::UNKNOWN)
+            {
+                log ("Unknown command provided\n",logType::ERR);
+            }
+            else
+            {
+                handleCommands (currentCommand);
+            }
+            delete currentCommand;
         }
     }
-    printf ("Out of loop\n");
 }
 void debugger::interactive ()
 {
-    commandThread = std::thread (debugger::parseExecCommands, this);
-    commandThread.join ();
+    if (!interactiveMode)
+    {
+        interactiveMode = true;
+        commandThread = std::thread (debugger::interactiveCommands, this);
+        commandThread.join ();
+    }
+    interactiveMode = false;
+}
+void debugger::log (const char * messageFormatted, logType type, ...)
+{   
+    CONSOLE_SCREEN_BUFFER_INFO consoleInfo;
+    WORD savedAttributes;
+    GetConsoleScreenBufferInfo(stdoutHandle, &consoleInfo);
+    savedAttributes = consoleInfo.wAttributes;
 
-    printf ("Command thread not active\n");
+    SetConsoleTextAttribute(stdoutHandle, type);
+    switch (type)
+    {
+        case logType::THREAD:
+        {
+            printf ("[+] ");
+            break;
+        }
+        case logType::DLL:
+        {
+            printf ("[+] ");
+            break;
+        }
+        case logType::WARNING:
+        {
+            printf ("[!] ");
+            break;
+        }
+        case logType::PROMPT:
+        {
+            printf ("%s",promptString.c_str());
+            SetConsoleTextAttribute(stdoutHandle, savedAttributes);
+            return;
+        }
+        case logType::INFO:
+        {
+            printf ("[*] ");
+            break;
+        }
+        case logType::ERR:
+        {
+            printf ("[!] ");
+            break;
+        }
+        case logType::UNKNOWN_EVENT:
+        {
+            printf ("[?] ");
+            break;
+        }
+    }    
+    SetConsoleTextAttribute(stdoutHandle, savedAttributes);
+    va_list args;
+    va_start(args, type);
+    vprintf (messageFormatted,args); // vprintf when we do not know how many arguments we gonna pass
+    va_end (args);
+}
+void debugger::placeBreakpoint (uint64_t address)
+{
+    uint8_t byte;
+    uint8_t int3Byte = 0xcc;
+    if (!ReadProcessMemory (debuggedProcessHandle, (LPCVOID) address, &byte, 1, NULL))
+    {
+        log ("Cannot get byte at address %.08x\n",logType::ERR,address);
+    }
+    if (!WriteProcessMemory (debuggedProcessHandle, (LPVOID) address, &int3Byte, 1, NULL))
+    {
+        log ("Cannot write int3 byte at address %.08x\n",logType::ERR,address);
+    }
+    breakpointsStolenBytes [address] = byte;
+}
+void debugger::addSoftBreakpoint (uint64_t address)
+{
+    if (!interactiveMode)
+    {
+        WaitForSingleObject (commandEvent,INFINITE);
+        placeBreakpoint (address);
+    }
+}
+void debugger::continueExecution ()
+{
+    if (!interactiveMode)
+    {
+        WaitForSingleObject (commandEvent,INFINITE);
+        SetEvent (continueDebugEvent);
+    }
+}
+void debugger::exitDebugger ()
+{
+    if (!interactiveMode)
+    {
+        debuggerActive = false;
+        debuggingActive = false;
+        SetEvent (continueDebugEvent);
+        debuggerThread.join();
+    }   
 }
 debugger::debugger (std::string fileName)
 {
+    stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
     commandEvent = CreateEventA (NULL,false,false,"commandEvent");
     continueDebugEvent = CreateEventA (NULL,false,false,"continueDebugEvent");
     this->fileName = fileName;
@@ -140,11 +287,11 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
     {
         if (exception->dwFirstChance)
         {
-            printf ("[*] First chance exception: ");
+            log ("First chance exception: ", logType::ERR);
         }
         else if (!exception->dwFirstChance)
         {
-            printf ("[*] Last chance exception: ");
+            log ("Last chance exception: ", logType::ERR);
         }   
     }
     switch (exception->ExceptionRecord.ExceptionCode)
@@ -156,7 +303,20 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
         }
         case EXCEPTION_BREAKPOINT:
         {
-            printf ("[^] Breakpoint reached at 0x%.08x\n",exception->ExceptionRecord.ExceptionAddress);
+            uint64_t breakpointAddress = (uint64_t) exception->ExceptionRecord.ExceptionAddress;
+            if (breakpointsStolenBytes.count(breakpointAddress) > 0)
+            {
+                uint8_t stolenByte = breakpointsStolenBytes[breakpointAddress];
+                log ("User breakpoint reached at 0x%.08x\n",logType::INFO,breakpointAddress);
+                if (!WriteProcessMemory (debuggedProcessHandle, (LPVOID) breakpointAddress, &stolenByte ,1, NULL)) // restore stolen byte
+                {
+                    log ("Cannot restore stolen byte\n",logType::ERR);
+                } 
+            }
+            else
+            {
+                log ("System breakpoint reached at 0x%.08x\n", logType::INFO, breakpointAddress);
+            }
             return DBG_CONTINUE;
         }
         case EXCEPTION_INT_DIVIDE_BY_ZERO:
@@ -171,12 +331,12 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
         }
         case EXCEPTION_SINGLE_STEP:
         {
-            printf ("[^] Single step\n");
+            log ("Single step \n", logType::INFO);
             return DBG_CONTINUE;
         }
         default:
         {
-            printf ("Exception not implemented yet ! \n");
+            log ("Not implemented exception yet\n", logType::UNKNOWN_EVENT);
             return DBG_EXCEPTION_NOT_HANDLED;
         }
     }
@@ -191,7 +351,8 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
             CREATE_PROCESS_DEBUG_INFO * info = &event->u.CreateProcessInfo;
             GetFinalPathNameByHandleA () (info->hFile,modulePath,MAX_PATH+1,0);
             char * moduleName = PathFindFileNameA(modulePath + 4);
-            printf ("[*] %s loaded, base address 0x%.08x\n entrypoint 0x%.08x\n",moduleName, info->lpBaseOfImage, info->lpStartAddress);
+            log ("%s loaded, base address 0x%.08x entrypoint 0x%.08x\n",logType::INFO,moduleName, info->lpBaseOfImage, info->lpStartAddress);
+            debuggedProcessBaseAddress = (uint64_t) info->lpBaseOfImage;
             free (modulePath);
             breakpointEntryPoint (info);
             return DBG_CONTINUE;
@@ -201,7 +362,7 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
             std::lock_guard<std::mutex> l_debuggingActive (m_debuggingActive);
 
             EXIT_PROCESS_DEBUG_INFO * infoProc = &event->u.ExitProcess;
-            printf ("[*] Process %u exited with code 0x%.08x\n",event->dwProcessId ,infoProc->dwExitCode);
+            log ("Process %u exited with code 0x%.08x\n", logType::INFO, event->dwProcessId ,infoProc->dwExitCode);
             SetEvent (commandEvent);
             *debuggingActive = false;
             return DBG_CONTINUE;
@@ -209,13 +370,13 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
         case EXIT_THREAD_DEBUG_EVENT:
         {
             EXIT_THREAD_DEBUG_INFO * infoThread = &event->u.ExitThread;
-            printf ("[*] Thread %u exited with code 0x%.08x\n",event->dwThreadId, infoThread->dwExitCode);
+            log ("Thread %u exited with code 0x%.08x\n", logType::THREAD, event->dwThreadId, infoThread->dwExitCode);
             return DBG_CONTINUE;
         }
         case CREATE_THREAD_DEBUG_EVENT:
         {
             CREATE_THREAD_DEBUG_INFO * infoThread = &event->u.CreateThread;
-            printf ("[*] Thread 0x%x created with entry address 0x%.08x\n",event->dwThreadId, infoThread->lpStartAddress);
+            log ("Thread 0x%x created with entry address 0x%.08x\n", logType::THREAD, event->dwThreadId, infoThread->lpStartAddress);
             return DBG_CONTINUE;
         }
         case LOAD_DLL_DEBUG_EVENT:
@@ -224,14 +385,14 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
             LOAD_DLL_DEBUG_INFO * loadInfo = &event->u.LoadDll;
             GetFinalPathNameByHandleA()(loadInfo->hFile,dllPath,MAX_PATH+1,0);
             char * dllName = PathFindFileNameA(dllPath + 4);
-            printf ("[*] %s loaded (0x%.08x)\n",dllName,loadInfo->lpBaseOfDll);
+            log ("%s loaded (0x%.08x)\n",logType::DLL,dllName,loadInfo->lpBaseOfDll);
             free (dllPath);
             return DBG_CONTINUE;
         }
         case UNLOAD_DLL_DEBUG_EVENT: // do not work with implicit loaded libraries ?
         {
             UNLOAD_DLL_DEBUG_INFO * unloadInfo = &event->u.UnloadDll;
-            printf ("[*] 0x%.08x DLL unloaded\n",unloadInfo->lpBaseOfDll);
+            log ("0x%.08x DLL unloaded\n",logType::DLL,unloadInfo->lpBaseOfDll);
             return DBG_CONTINUE;
         }
         case EXCEPTION_DEBUG_EVENT:
@@ -241,7 +402,7 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
         }
         default:
         {
-            printf ("[?] Not implemented Debug Event yet !\n");
+            log ("Not implemented debug event yet \n", logType::UNKNOWN_EVENT);
             return DBG_EXCEPTION_NOT_HANDLED;
         }
     }

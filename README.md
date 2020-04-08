@@ -1,6 +1,6 @@
 # MalDbg
 
-Writing debugger 4fun for Windows.
+Writing debugger 4fun for Windows (x86-64).
 Tested on Windows 7 (6.1.7601 SP1) with GCC 7.3.0 and CMake 3.14.7.
 
 ## How to compile
@@ -15,7 +15,15 @@ cmake -G "MinGW Makefiles" ..
 mingw32-make
 ```
 
-## Functionality (for now)
+## Features (for now)
 
-1. Provide information about debugger events and exceptions. 
-2. Interactive mode (continue, run, exit)
+1. Provide information about debugger events sent and exceptions raised. 
+2. Interactive mode (continue, run, exit).
+3. Manually setting breakpoints.
+4. Breakpoint at entrypoint.
+5. Prepared program structure for automating commands (like gdb script).
+6. Colored output for cmd.exe.
+
+## Visual presentation 
+
+![](screen.png) 
