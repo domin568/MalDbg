@@ -21,6 +21,9 @@ class debugger
 
         std::queue <std::string> commandQueue;
 
+        HANDLE interThreadPipeRead;
+        HANDLE interThreadPipeWrite;
+
     	DEBUG_EVENT debugEvent;
     	DWORD run (std::string);
     	DWORD processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive);

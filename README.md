@@ -18,4 +18,4 @@ mingw32-make
 ## Functionality (for now)
 
 1. Provide information about debugger events and exceptions. 
-2. To be continued..
+2. Interactive mode (continue, run, exit)
