@@ -15,6 +15,38 @@ cmake -G "MinGW Makefiles" ..
 mingw32-make
 ```
 
+## Usage
+
+```
+maldbg <exe>
+```
+
+## Commands
+
+```
+r | run 
+```
+
+Run debugged process (or restart while running).
+
+```
+b | bp | br | breakpoint <hexadecimal address>
+```
+
+Breakpoint at specified hexadecimal address. 0x is optional. 
+
+```
+c | continue
+```
+
+Continue process.
+
+```
+e | exit
+```
+
+Exit from debugger. CTRL-C not yet interrupts debugged execution, just exiting.
+
 ## Features (for now)
 
 1. Provide information about debugger events sent and exceptions raised. 
