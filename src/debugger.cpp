@@ -1,7 +1,7 @@
 #include <shlwapi.h>
 #include <strsafe.h>
 #include "debugger.h"
-#include <stdio.h>
+
 
 typedef DWORD (*t_GetFinalPathNameByHandleA) (HANDLE hFile,LPSTR lpszFilePath, DWORD cchFilePath, DWORD dwFlags);
 
@@ -53,35 +53,135 @@ void breakpointEntryPoint (CREATE_PROCESS_DEBUG_INFO * info)
 {
 
 }
-DWORD debugger::run ()
+DWORD debugger::run (std::string fileName)
 {
+    ResetEvent (commandEvent);
+    ResetEvent (continueDebugEvent);
+
+    ZeroMemory( &si, sizeof(si) );
+    si.cb = sizeof(si);
+    ZeroMemory( &pi, sizeof(pi) );
+    ZeroMemory ( &debugEvent, sizeof(debugEvent));
+
+    if (!CreateProcess (fileName.c_str(),NULL,NULL,NULL,TRUE,DEBUG_PROCESS,NULL,NULL,&si,&pi))
+    {
+       ErrorExit(TEXT("CreateProces"));
+    }
     while (debuggingActive)
     {
         if (!WaitForDebugEvent (&debugEvent,INFINITE))
         {
             ErrorExit(TEXT("WaitForDebugEvent"));
         }
-        DWORD debugResponse = ProcessDebugEvent(&debugEvent, &debuggingActive);
+        DWORD debugResponse = processDebugEvents(&debugEvent, &debuggingActive);
 
-        // Execute commands
-
+        if (debugEvent.dwDebugEventCode == EXCEPTION_DEBUG_EVENT)
+        {
+            SetEvent (commandEvent);
+            WaitForSingleObject (continueDebugEvent,INFINITE);
+            // wait for command to be executed
+        }
+        
         ContinueDebugEvent (debugEvent.dwProcessId,debugEvent.dwThreadId,debugResponse);
     }
+    printf ("Debugging is not active\n");
     return 0;
 }
-debugger::debugger (const char * fileName)
+void debugger::parseExecCommands ()
 {
-    ZeroMemory( &si, sizeof(si) );
-    si.cb = sizeof(si);
-    ZeroMemory( &pi, sizeof(pi) );
-    ZeroMemory ( &debugEvent, sizeof(debugEvent));
-
-    if (!CreateProcess (fileName,NULL,NULL,NULL,TRUE,DEBUG_PROCESS,NULL,NULL,&si,&pi))
+    std::string command;
+    while (debuggerActive)
     {
-       ErrorExit(TEXT("CreateProces"));
+        printf ("Starts to wait\n");
+        WaitForSingleObject (commandEvent,INFINITE);
+        printf ("maldbg > ");
+        std::cin >> command;
+        if (command == "c")
+        {
+            SetEvent (continueDebugEvent);
+        }
+        else if (command == "r" && !debuggingActive)
+        {
+            SetEvent (continueDebugEvent);
+            debuggerThread.join();
+            debuggingActive = true;
+            debuggerThread = std::thread(debugger::run, this, fileName);
+        }
+        else if (command == "exit")
+        {
+            std::lock_guard<std::mutex> l_debuggingActive (m_debuggingActive);
+            printf ("[*] Exiting\n");
+            debuggerActive = false;
+            debuggingActive = false;
+            SetEvent (continueDebugEvent);
+            debuggerThread.join();
+        }
+    }
+    printf ("Out of loop\n");
+}
+void debugger::interactive ()
+{
+    commandThread = std::thread (debugger::parseExecCommands, this);
+    commandThread.join ();
+
+    printf ("Command thread not active\n");
+}
+debugger::debugger (std::string fileName)
+{
+    commandEvent = CreateEventA (NULL,false,false,"commandEvent");
+    continueDebugEvent = CreateEventA (NULL,false,false,"continueDebugEvent");
+    this->fileName = fileName;
+    debuggerThread = std::thread(debugger::run, this, fileName);
+}
+DWORD debugger::processExceptions (DEBUG_EVENT * event)
+{
+    EXCEPTION_DEBUG_INFO * exception = &event->u.Exception;
+    if (exception->ExceptionRecord.ExceptionCode != EXCEPTION_BREAKPOINT && exception->ExceptionRecord.ExceptionCode != EXCEPTION_SINGLE_STEP)
+    {
+        if (exception->dwFirstChance)
+        {
+            printf ("[*] First chance exception: ");
+        }
+        else if (!exception->dwFirstChance)
+        {
+            printf ("[*] Last chance exception: ");
+        }   
+    }
+    switch (exception->ExceptionRecord.ExceptionCode)
+    {
+        case EXCEPTION_ACCESS_VIOLATION:
+        {
+            printf ("Access Violation (0x%.08x) at address 0x%.08x\n",exception->ExceptionRecord.ExceptionCode, exception->ExceptionRecord.ExceptionAddress);
+            return DBG_EXCEPTION_NOT_HANDLED;
+        }
+        case EXCEPTION_BREAKPOINT:
+        {
+            printf ("[^] Breakpoint reached at 0x%.08x\n",exception->ExceptionRecord.ExceptionAddress);
+            return DBG_CONTINUE;
+        }
+        case EXCEPTION_INT_DIVIDE_BY_ZERO:
+        {
+            printf ("Division by zero exception at 0x%.08x\n",exception->ExceptionRecord.ExceptionAddress);
+            return DBG_EXCEPTION_NOT_HANDLED;
+        }
+        case EXCEPTION_PRIV_INSTRUCTION:
+        {
+            printf ("Privileged instruction was spotted at 0x%.08x\n",exception->ExceptionRecord.ExceptionAddress);  
+            return DBG_EXCEPTION_NOT_HANDLED;
+        }
+        case EXCEPTION_SINGLE_STEP:
+        {
+            printf ("[^] Single step\n");
+            return DBG_CONTINUE;
+        }
+        default:
+        {
+            printf ("Exception not implemented yet ! \n");
+            return DBG_EXCEPTION_NOT_HANDLED;
+        }
     }
 }
-DWORD debugger::ProcessDebugEvent (DEBUG_EVENT * event, bool * debuggingActive) // returns dwContinueStatus 
+DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive) // returns dwContinueStatus 
 {
     switch (event->dwDebugEventCode)
     {
@@ -98,8 +198,11 @@ DWORD debugger::ProcessDebugEvent (DEBUG_EVENT * event, bool * debuggingActive) 
         }
         case EXIT_PROCESS_DEBUG_EVENT:
         {
+            std::lock_guard<std::mutex> l_debuggingActive (m_debuggingActive);
+
             EXIT_PROCESS_DEBUG_INFO * infoProc = &event->u.ExitProcess;
             printf ("[*] Process %u exited with code 0x%.08x\n",event->dwProcessId ,infoProc->dwExitCode);
+            SetEvent (commandEvent);
             *debuggingActive = false;
             return DBG_CONTINUE;
         }
@@ -133,51 +236,7 @@ DWORD debugger::ProcessDebugEvent (DEBUG_EVENT * event, bool * debuggingActive) 
         }
         case EXCEPTION_DEBUG_EVENT:
         {
-            EXCEPTION_DEBUG_INFO * exception = &event->u.Exception;
-            if (exception->ExceptionRecord.ExceptionCode != EXCEPTION_BREAKPOINT && exception->ExceptionRecord.ExceptionCode != EXCEPTION_SINGLE_STEP)
-            {
-                if (exception->dwFirstChance)
-                {
-                    printf ("[*] First chance exception: ");
-                }
-                else if (!exception->dwFirstChance)
-                {
-                    printf ("[*] Last chance exception: ");
-                }   
-            }
-            switch (exception->ExceptionRecord.ExceptionCode)
-            {
-                case EXCEPTION_ACCESS_VIOLATION:
-                {
-                    printf ("Access Violation (0x%.08x) at address 0x%.08x\n",exception->ExceptionRecord.ExceptionCode, exception->ExceptionRecord.ExceptionAddress);
-                    return DBG_EXCEPTION_NOT_HANDLED;
-                }
-                case EXCEPTION_BREAKPOINT:
-                {
-                    printf ("[^] Breakpoint reached at 0x%.08x\n",exception->ExceptionRecord.ExceptionAddress);
-                    return DBG_CONTINUE;
-                }
-                case EXCEPTION_INT_DIVIDE_BY_ZERO:
-                {
-                    printf ("Division by zero exception at 0x%.08x\n",exception->ExceptionRecord.ExceptionAddress);
-                    return DBG_EXCEPTION_NOT_HANDLED;
-                }
-                case EXCEPTION_PRIV_INSTRUCTION:
-                {
-                    printf ("Privileged instruction was spotted at 0x%.08x\n",exception->ExceptionRecord.ExceptionAddress);  
-                    return DBG_EXCEPTION_NOT_HANDLED;
-                }
-                case EXCEPTION_SINGLE_STEP:
-                {
-                    printf ("[^] Single step\n");
-                    return DBG_CONTINUE;
-                }
-                default:
-                {
-                    printf ("Exception not implemented yet ! \n");
-                    return DBG_EXCEPTION_NOT_HANDLED;
-                }
-            }
+            return processExceptions (event);
             break;
         }
         default:
