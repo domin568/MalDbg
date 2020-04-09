@@ -245,6 +245,7 @@ void debugger::placeBreakpoint (uint64_t address)
         log ("Cannot write int3 byte at address %.08x\n",logType::ERR,address);
     }
     breakpointsStolenBytes [address] = byte;
+    FlushInstructionCache(debuggedProcessHandle, (LPVOID) address,1);
 }
 void debugger::addSoftBreakpoint (uint64_t address)
 {
@@ -311,7 +312,8 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
                 if (!WriteProcessMemory (debuggedProcessHandle, (LPVOID) breakpointAddress, &stolenByte ,1, NULL)) // restore stolen byte
                 {
                     log ("Cannot restore stolen byte\n",logType::ERR);
-                } 
+                }
+                FlushInstructionCache(debuggedProcessHandle, (LPVOID) breakpointAddress,1); 
             }
             else
             {
