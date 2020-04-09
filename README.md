@@ -25,25 +25,37 @@ maldbg <exe>
 ## Commands
 
 ```
-r | run 
+r, run 
 ```
 
 Run debugged process (or restart while running).
 
 ```
-b | bp | br | breakpoint <hexadecimal address>
+b, bp, br, breakpoint <hexadecimal address>
 ```
 
 Breakpoint at specified hexadecimal address. 0x is optional. 
 
 ```
-c | continue
+context
+```
+
+Shows current state of executions (registers + disassembly for now).
+
+```
+disasm, disassembly <hexadecimal address> <instruction count>
+```
+
+Disassemblies specified number of instructions at specified address.
+
+```
+c, continue
 ```
 
 Continue process.
 
 ```
-e | exit
+e, exit
 ```
 
 Exit from debugger. CTRL-C not yet interrupts debugged execution, just exiting.
@@ -51,10 +63,12 @@ Exit from debugger. CTRL-C not yet interrupts debugged execution, just exiting.
 ## Features (for now)
 
 1. Provide information about debugger events sent and exceptions raised. 
-2. Interactive mode (continue, run, exit).
-3. Manually setting breakpoints.
-4. Breakpoint at entrypoint.
-5. Prepared program structure for automating commands (like gdb script).
+2. Interactive mode.
+3. Prepared program structure for automating commands (like gdb script).
+4. Ability to disassembly instructions at specified address.
+5. Shows context of actual thread after each interrupt of execution.
+4. Ability to manually set breakpoints.
+5. Automatic breakpoint at entrypoint.
 6. Colored output for cmd.exe.
 
 ## Visual presentation 
