@@ -40,7 +40,7 @@ Breakpoint at specified hexadecimal address. 0x is optional.
 context
 ```
 
-Shows current state of executions (registers + disassembly for now).
+Shows current state of execution (registers + disassembly for now).
 
 ```
 disasm, disassembly <hexadecimal address> <instruction count>
