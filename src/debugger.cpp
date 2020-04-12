@@ -2,6 +2,8 @@
 #include <strsafe.h>
 #include "debugger.h"
 
+// vec.erase(std::remove(vec.begin(), vec.end(), 8), vec.end());
+
 
 typedef DWORD (*t_GetFinalPathNameByHandleA) (HANDLE hFile,LPSTR lpszFilePath, DWORD cchFilePath, DWORD dwFlags);
 
@@ -30,10 +32,12 @@ int parseStringToNumber (std::string toConvert)
 }
 void debugger::disasmAt (uint64_t address, int numberOfInstructions)
 {
+    std::vector <uint64_t> breakpointAddresses;
     uint8_t * codeBuffer = new uint8_t [100];
     if (!ReadProcessMemory (debuggedProcessHandle, (LPCVOID) address, codeBuffer, 100 , NULL))
     {
         log ("Cannot read memory at %.16llx\n",logType::ERR,address);
+        return;
     }
     csh handle;
     cs_insn *insn;
@@ -47,9 +51,36 @@ void debugger::disasmAt (uint64_t address, int numberOfInstructions)
     count = cs_disasm (handle, codeBuffer, 100 , address, 0, &insn);
     if (count > 0)
     {
+        for (int j = 0; j < (numberOfInstructions >= count ? count : numberOfInstructions); j++) // checking for breakpoint
+        {
+            if (!strncmp (insn[j].mnemonic, "int3", 4) )
+            {
+                if (breakpointsStolenBytes.count(insn[j].address) > 0) // user breakpoint
+                {
+                    breakpointAddresses.push_back(insn[j].address);
+                    uint8_t stolenByte = breakpointsStolenBytes[insn[j].address];
+                    size_t int3Offset = insn[j].address - address;
+                    codeBuffer [int3Offset] = stolenByte;
+                    cs_free (insn, count);
+                    count = cs_disasm (handle, codeBuffer, 100 , address, 0, &insn); // disassembly again
+                }
+            }
+        }
         for (int j = 0 ; j < (numberOfInstructions >= count ? count : numberOfInstructions); j++)
         {
-            printf ("0x%.16llx:\t%s\t\t%s\n",insn[j].address, insn[j].mnemonic, insn[j].op_str);
+            bool int3Found = false;
+            for (const auto & a : breakpointAddresses)
+            {
+                if (insn[j].address == a)
+                {
+                    printfColor ("0x%.16llx:\t%s\t\t%s\n", 12, insn[j].address, insn[j].mnemonic, insn[j].op_str); // breakpoint line spotted
+                    int3Found = true;
+                }
+            }
+            if (!int3Found)
+            {
+                printf ("0x%.16llx:\t%s\t\t%s\n",insn[j].address, insn[j].mnemonic, insn[j].op_str);
+            }
         }
         cs_free (insn, count);
     }
@@ -88,27 +119,27 @@ void debugger::setContext (CONTEXT * context)
 }
 void debugger::showContext ()
 {
-    CONTEXT * lcContext = getContext ();
-    if (!lcContext)
-    {
-        return;
-    }
+    CONTEXT * lcContext = this->currentContext;
 
     printf ("\n");
 
+    DWORD flg = lcContext->EFlags;
+
     log ("RAX %.16llx RBX %.16llx RCX %.16llx\nRDX %.16llx RSI %.16llx RDI %.16llx",logType::CONTEXT_REGISTERS,
         lcContext->Rax, lcContext->Rbx, lcContext->Rcx, lcContext->Rdx, lcContext->Rsi, lcContext->Rdi);
-    log ("R8  %.16llx R9  %.16llx R10 %.16llx\nR11 %.16llx R12 %.16llx R13 %.16llx\nR14 %.16llx R15 %.16llx",logType::CONTEXT_REGISTERS,
-        lcContext->R8, lcContext->R9, lcContext->R10, lcContext->R11, lcContext->R12, lcContext->R13, lcContext->R14, lcContext->R15);
+    log ("R8  %.16llx R9  %.16llx R10 %.16llx\nR11 %.16llx R12 %.16llx R13 %.16llx\nR14 %.16llx R15 %.16llx FLG %.16llx",logType::CONTEXT_REGISTERS,
+        lcContext->R8, lcContext->R9, lcContext->R10, lcContext->R11, lcContext->R12, lcContext->R13, lcContext->R14, lcContext->R15, lcContext->EFlags);
     log ("RIP %.16llx RBP %.016x RSP %.016x", logType::CONTEXT_REGISTERS, lcContext->Rip, lcContext->Rbp, lcContext->Rsp);
+
+    log ("ZF %.1x CF %.1x PF %.1x AF %.1x SF %.1x TF %.1x IF %.1x DF %.1x OF %.1x",logType::CONTEXT_REGISTERS,
+        (flg & (1 << 6)) >> 6, flg & 1, (flg & (1 << 2)) >> 2, (flg & (1 << 4)) >> 4, (flg & (1 << 7)) >> 7, (flg & (1 << 8)) >> 8,
+        (flg & (1 << 9)) >> 9, (flg & (1 << 10)) >> 10, (flg & (1 << 11)) >> 11 );
 
     printf ("\n");
 
     disasmAt (lcContext->Rip, SHOW_CONTEXT_INSTRUCTION_COUNT);   
 
     printf ("\n"); 
-
-    delete lcContext;
 }
 
 void debugger::breakpointEntryPoint (CREATE_PROCESS_DEBUG_INFO * info)
@@ -116,6 +147,30 @@ void debugger::breakpointEntryPoint (CREATE_PROCESS_DEBUG_INFO * info)
     uint64_t entryRVA = (uint64_t) info->lpStartAddress - (uint64_t) info->lpBaseOfImage;
     uint64_t entryVA = (uint64_t) info->lpBaseOfImage + (uint64_t) entryRVA;
     placeBreakpoint (entryVA);
+}
+void debugger::checkInterruptEvent ()
+{
+    for (const auto & i : interruptingEvents) 
+    {
+        if (i == EXCEPTION_DEBUG_EVENT)
+        {
+            for (const auto & j : interruptingExceptions)
+            {
+                if (currentDebugEvent.u.Exception.ExceptionRecord.ExceptionCode == j)
+                {
+                    SetEvent (commandEvent);
+                    WaitForSingleObject (continueDebugEvent,INFINITE);
+                    // wait for command to be executed
+                }
+            }
+        }
+        else if (currentDebugEvent.dwDebugEventCode == i)
+        {
+            SetEvent (commandEvent);
+            WaitForSingleObject (continueDebugEvent,INFINITE);
+            // wait for command to be executed
+        }
+    }
 }
 DWORD debugger::run (std::string fileName)
 {
@@ -141,20 +196,23 @@ DWORD debugger::run (std::string fileName)
             log ("WaitForDebugEven returned nonzero value\n",logType::ERR);
             return 2;
         }
+        this->currentContext = getContext ();
         DWORD debugResponse = processDebugEvents(&currentDebugEvent, &debuggingActive);
-
-        for (const auto & i : interruptingEvents) // check all events that should interrupt execution
+        if (!bypassInterruptOnce)
         {
-            if (currentDebugEvent.dwDebugEventCode == i)
-            {
-                SetEvent (commandEvent);
-                WaitForSingleObject (continueDebugEvent,INFINITE);
-                // wait for command to be executed
-            }
+            checkInterruptEvent ();          
+            setContext (this->currentContext);
+            ContinueDebugEvent (currentDebugEvent.dwProcessId,currentDebugEvent.dwThreadId,debugResponse); 
+        }
+        else 
+        {
+            bypassInterruptOnce = false;
+            setContext (this->currentContext);
+            ContinueDebugEvent (currentDebugEvent.dwProcessId,currentDebugEvent.dwThreadId,debugResponse);
         }
 
-        ContinueDebugEvent (currentDebugEvent.dwProcessId,currentDebugEvent.dwThreadId,debugResponse);
     }
+    delete this->currentContext;
     return 0;
 }
 command * parseCommand (std::string c)
@@ -167,6 +225,7 @@ command * parseCommand (std::string c)
     std::regex exitRegex ("^(e|exit)\\s*$");
     std::regex softBreakpointRegex ("^(b|br|bp|breakpoint)\\s+(0x)?([0-9a-fA-F]+)$");
     std::regex disasmRegex ("^(disasm|disassembly)\\s+(0x)?([0-9a-fA-F]+)\\s+((0x[0-9a-fA-F]+)|([0-9]+))$");
+    std::regex stepInRegex ("^(si|step in|s i)\\s*$");
 
     std::smatch continueMatches;
     std::smatch contextMatches;
@@ -174,11 +233,17 @@ command * parseCommand (std::string c)
     std::smatch exitMatches;
     std::smatch softBreakpointMatches;
     std::smatch disasmMatches;
+    std::smatch stepInMatches;
 
 
     if (std::regex_search (c, continueMatches, continueRegex))
     {
         comm->type = commandType::CONTINUE;
+        return comm;
+    }
+    else if (std::regex_search (c, stepInMatches, stepInRegex))
+    {
+        comm->type = commandType::STEP_IN;
         return comm;
     }
     else if (std::regex_search (c, runMatches, runRegex))
@@ -225,6 +290,10 @@ void debugger::handleCommands(command * currentCommand)
 {
     if (currentCommand->type == commandType::CONTINUE)
     {
+        if (lastException.exceptionType == EXCEPTION_BREAKPOINT) // single_step after breakpoint restoring breakpoint but we do not want to interrupt that time
+        {
+            bypassInterruptOnce = true;
+        }
         SetEvent (continueDebugEvent);
         commandModeActive = false;
     }
@@ -259,6 +328,12 @@ void debugger::handleCommands(command * currentCommand)
         debuggingActive = false;
         SetEvent (continueDebugEvent);
         debuggerThread.join();
+        commandModeActive = false;
+    }
+    else if (currentCommand->type == commandType::STEP_IN)
+    {
+        this->currentContext->EFlags |= 0x100;
+        SetEvent (continueDebugEvent);
         commandModeActive = false;
     }
     else if (currentCommand->type == commandType::CONTEXT)
@@ -302,6 +377,19 @@ void debugger::interactive ()
         commandThread.join ();
     }
     interactiveMode = false;
+}
+void debugger::printfColor (const char * format, DWORD color, ... )
+{
+    CONSOLE_SCREEN_BUFFER_INFO consoleInfo;
+    WORD savedAttributes;
+    GetConsoleScreenBufferInfo(stdoutHandle, &consoleInfo);
+    savedAttributes = consoleInfo.wAttributes;
+    SetConsoleTextAttribute(stdoutHandle, color);
+    va_list args;
+    va_start(args, color);
+    vprintf (format,args); // vprintf when we do not know how many arguments we gonna pass
+    va_end (args);
+    SetConsoleTextAttribute(stdoutHandle, savedAttributes);
 }
 void debugger::log (const char * messageFormatted, logType type, ...)
 {   
@@ -384,10 +472,11 @@ void debugger::placeBreakpoint (uint64_t address)
 
 debugger::debugger (std::string fileName)
 {
-
-    interruptingEvents.push_back(EXCEPTION_DEBUG_EVENT); // only exception interrupts execution
-    //interruptingEvents.push_back(CREATE_PROCESS_DEBUG_EVENT);
-    //interruptingEvents.push_back(LOAD_DLL_DEBUG_EVENT);
+    interruptingEvents.insert(EXCEPTION_DEBUG_EVENT); // only exception interrupts execution
+    interruptingExceptions.insert (EXCEPTION_BREAKPOINT);
+    interruptingExceptions.insert (EXCEPTION_ACCESS_VIOLATION);
+    interruptingExceptions.insert (EXCEPTION_ILLEGAL_INSTRUCTION);
+    interruptingExceptions.insert (EXCEPTION_SINGLE_STEP);
 
     stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
     commandEvent = CreateEventA (NULL,false,false,"commandEvent");
@@ -395,26 +484,46 @@ debugger::debugger (std::string fileName)
     this->fileName = fileName;
     debuggerThread = std::thread(debugger::run, this, fileName);
 }
+void debugger::handleSingleStep (EXCEPTION_DEBUG_INFO * exception)
+{
+    uint64_t breakpointAddress = (uint64_t) exception->ExceptionRecord.ExceptionAddress;
+    if (lastException.exceptionType == EXCEPTION_BREAKPOINT)
+    {
+        uint8_t cc = 0xCC;
+        if (!WriteProcessMemory (debuggedProcessHandle, (LPVOID) lastException.rip, &cc ,1, NULL)) // restore stolen byte
+        {
+            log ("Cannot set 0xcc in single step\n",logType::ERR);
+        }
+        this->currentContext->EFlags &= ~0x100;
+    }
+    else
+    {
+        log ("User single step reached at 0x%.16llx\n",logType::INFO,breakpointAddress);
+    }
+    lastException.exceptionType = (DWORD) exception->ExceptionRecord.ExceptionCode;
+    lastException.rip = breakpointAddress;
+}
 void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception)
 {
     uint64_t breakpointAddress = (uint64_t) exception->ExceptionRecord.ExceptionAddress;
-    if (breakpointsStolenBytes.count(breakpointAddress) > 0)
+    if (breakpointsStolenBytes.count(breakpointAddress) > 0) // user breakpoint
     {
-        uint8_t stolenByte = breakpointsStolenBytes[breakpointAddress];
         log ("User breakpoint reached at 0x%.16llx\n",logType::INFO,breakpointAddress);
+        uint8_t stolenByte = breakpointsStolenBytes[breakpointAddress];
         if (!WriteProcessMemory (debuggedProcessHandle, (LPVOID) breakpointAddress, &stolenByte ,1, NULL)) // restore stolen byte
         {
             log ("Cannot restore stolen byte\n",logType::ERR);
         }
 
-        CONTEXT * c = getContext ();
-        c->Rip--; // int3 already consumed, need to revert execution state
-        setContext (c);
+        lastException.exceptionType = (DWORD) exception->ExceptionRecord.ExceptionCode;
+        lastException.rip = breakpointAddress;
+
+        this->currentContext->EFlags |= 0x100;
+        this->currentContext->Rip--; // int3 already consumed, need to revert execution state
 
         FlushInstructionCache(debuggedProcessHandle, (LPVOID) breakpointAddress,1); 
-        delete c;
     }
-    else
+    else // system breakpoint
     {
         log ("System breakpoint reached at 0x%.16llx\n", logType::INFO, breakpointAddress);
     }    
@@ -457,7 +566,7 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
         }
         case EXCEPTION_SINGLE_STEP:
         {
-            log ("Single step \n", logType::INFO);
+            handleSingleStep (exception);
             return DBG_CONTINUE;
         }
         default:
@@ -561,5 +670,5 @@ void debugger::exitDebugger ()
         debuggingActive = false;
         SetEvent (continueDebugEvent);
         debuggerThread.join();
-    }   
+    }
 }

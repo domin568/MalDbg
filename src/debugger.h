@@ -6,7 +6,7 @@
 #include <mutex>
 #include <queue>
 #include <regex>
-#include <vector>
+#include <set>
 #include <map>
 #include <capstone/capstone.h>
 
@@ -22,6 +22,7 @@ enum class commandType
     NEXT_INSTRUCTION = 7,
     STEP_IN = 8,
     DISASM = 9,
+    TRACE_TO = 10,
     UNKNOWN = 0xFF
 };
 enum logType
@@ -40,6 +41,11 @@ struct command
     commandType type;
     std::vector <std::string> arguments;
 };
+struct exceptionData
+{
+    DWORD exceptionType;
+    DWORD rip;
+};
 
 // HELPER FUNCTIONS 
 
@@ -56,15 +62,20 @@ class debugger
         DWORD processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive);
         DWORD processExceptions (DEBUG_EVENT * event);
         void handleBreakpoint (EXCEPTION_DEBUG_INFO * exception);
+        void handleSingleStep (EXCEPTION_DEBUG_INFO * exception);
         void breakpointEntryPoint (CREATE_PROCESS_DEBUG_INFO * info);
         void placeBreakpoint (uint64_t);
         void interactiveCommands ();
         void handleCommands (command *);
         void log (const char *, logType, ...);
+        void printfColor (const char *, DWORD, ...);
         CONTEXT * getContext ();
         void setContext (CONTEXT *);
         void showContext ();
         void disasmAt (uint64_t, int);
+        void checkInterruptEvent ();
+
+        CONTEXT * currentContext; // shared resource, never used in paralel
         
         uint64_t debuggedProcessBaseAddress;
 
@@ -74,16 +85,20 @@ class debugger
     	STARTUPINFO si;
     	PROCESS_INFORMATION pi;
 
+        exceptionData lastException;
+
     	bool debuggingActive = true;
     	bool debuggerActive = true;
         bool interactiveMode = false;
         bool commandModeActive = false;
+        bool bypassInterruptOnce = false;
 
     	std::mutex m_debuggingActive;
     	std::mutex m_debuggerActive;
 
         std::map <uint64_t,uint8_t> breakpointsStolenBytes;
-        std::vector <DWORD> interruptingEvents;
+        std::set <DWORD> interruptingEvents;
+        std::set <DWORD> interruptingExceptions;
 
     	DEBUG_EVENT currentDebugEvent;
 

@@ -1,3 +1,4 @@
+// DBG_CONTROL_C
 #include "debugger.h"
 
 int main (int argc, char ** argv)
