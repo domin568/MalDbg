@@ -7,8 +7,10 @@
 #include <queue>
 #include <regex>
 #include <set>
-#include <map>
+#include <vector>
 #include <capstone/capstone.h>
+
+#include "breakpoint.h"
 
 enum class commandType
 {
@@ -64,7 +66,7 @@ class debugger
         void handleBreakpoint (EXCEPTION_DEBUG_INFO * exception);
         void handleSingleStep (EXCEPTION_DEBUG_INFO * exception);
         void breakpointEntryPoint (CREATE_PROCESS_DEBUG_INFO * info);
-        void placeBreakpoint (uint64_t);
+        void placeSoftwareBreakpoint (void *, bool);
         void interactiveCommands ();
         void handleCommands (command *);
         void log (const char *, logType, ...);
@@ -74,6 +76,8 @@ class debugger
         void showContext ();
         void disasmAt (uint64_t, int);
         void checkInterruptEvent ();
+        breakpoint * searchForBreakpoint (void * address);
+        void * getNextInstructionAddress (void *);
 
         CONTEXT * currentContext; // shared resource, never used in paralel
         
@@ -96,7 +100,8 @@ class debugger
     	std::mutex m_debuggingActive;
     	std::mutex m_debuggerActive;
 
-        std::map <uint64_t,uint8_t> breakpointsStolenBytes;
+        //std::map <uint64_t,uint8_t> breakpointsStolenBytes;
+        std::vector <breakpoint> breakpoints;
         std::set <DWORD> interruptingEvents;
         std::set <DWORD> interruptingExceptions;
 
@@ -114,7 +119,7 @@ class debugger
 
 		debugger (std::string);
 		void interactive ();
-        void addSoftBreakpoint (uint64_t);
+        void addSoftBreakpoint (void *);
         void exitDebugger ();
         void continueExecution ();
 };
