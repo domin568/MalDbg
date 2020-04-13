@@ -118,7 +118,7 @@ void debugger::disasmAt (uint64_t address, int numberOfInstructions)
             bool breakpointShown = false;
             for (const auto & a : disassembledBreakpoints) // search for line with breakpoint
             {
-                if ((void *) insn[j].address == a->getAddress() && a->getType() == breakpointType::SOFTWARE_TYPE)
+                if ((void *) insn[j].address == a->getAddress() && a->getType() == breakpointType::SOFTWARE_TYPE && !a->getIsOneHit())
                 {
                     printfColor ("0x%.16llx:\t%s\t\t%s\n", 12, insn[j].address, insn[j].mnemonic, insn[j].op_str); // breakpoint line spotted
                     breakpointShown = true;
@@ -281,6 +281,7 @@ command * parseCommand (std::string c)
     std::regex disasmRegex ("^(disasm|disassembly)\\s+(0x)?([0-9a-fA-F]+)\\s+((0x[0-9a-fA-F]+)|([0-9]+))$");
     std::regex stepInRegex ("^(si|step in|s i)\\s*$");
     std::regex nextInstructionRegex ("^(ni|next instruction|n i)\\s*$");
+    std::regex showBreakpointsRegex ("^(bl|show breakpoints| breakpoint list|b l|b list| breakpoint l)\\s*$");
 
     std::smatch continueMatches;
     std::smatch contextMatches;
@@ -290,6 +291,7 @@ command * parseCommand (std::string c)
     std::smatch disasmMatches;
     std::smatch stepInMatches;
     std::smatch nextInstructionMatches;
+    std::smatch showBreakpointsMatches;
 
 
     if (std::regex_search (c, continueMatches, continueRegex))
@@ -322,6 +324,11 @@ command * parseCommand (std::string c)
         comm->type = commandType::CONTEXT;
         return comm;   
     }
+    else if (std::regex_search (c, showBreakpointsMatches, showBreakpointsRegex))
+    {
+        comm->type = commandType::SHOW_BREAKPOINTS;
+        return comm;
+    }
     else if (std::regex_match (c, softBreakpointMatches, softBreakpointRegex))
     {
         comm->type = commandType::SOFT_BREAKPOINT;
@@ -347,6 +354,15 @@ command * parseCommand (std::string c)
     comm->type = commandType::UNKNOWN;
     return comm;
 }
+void debugger::showBreakpoints ()
+{
+    int j = 0;
+    for (auto & i : breakpoints)
+    {
+        log ("Breakpoint [%d] address %.16llx oneHit %d hitCount %d\n",logType::INFO, j, i.getAddress(), i.getIsOneHit(), i.getHitCount());
+        j++;
+    }
+}
 void debugger::handleCommands(command * currentCommand)
 {
     if (currentCommand->type == commandType::CONTINUE)
@@ -368,6 +384,10 @@ void debugger::handleCommands(command * currentCommand)
         uint64_t address = parseStringToAddress(currentCommand->arguments[0]);
         int numberOfInstructions = parseStringToNumber(currentCommand->arguments[1]);
         disasmAt (address,numberOfInstructions);
+    }
+    else if (currentCommand->type == commandType::SHOW_BREAKPOINTS)
+    {
+        showBreakpoints ();
     }
     else if (currentCommand->type == commandType::RUN)
     {
@@ -399,8 +419,9 @@ void debugger::handleCommands(command * currentCommand)
     }
     else if (currentCommand->type == commandType::NEXT_INSTRUCTION)
     {
-        if (lastException.exceptionType == EXCEPTION_BREAKPOINT) // single_step after breakpoint restoring breakpoint but we do not want to interrupt that time
+        if (lastException.exceptionType == EXCEPTION_BREAKPOINT && !lastException.oneHitBreakpoint) // single_step after breakpoint restoring breakpoint but we do not want to interrupt that time
         {
+            printf ("Ostatnim exceptionem byl breakpoint \n");
             bypassInterruptOnce = true;
         }
         void * addr = getNextInstructionAddress ( (void *) currentContext->Rip);
@@ -564,6 +585,7 @@ void debugger::handleSingleStep (EXCEPTION_DEBUG_INFO * exception)
 
     if (bp && !bp->getIsOneHit() && lastException.exceptionType == EXCEPTION_BREAKPOINT)
     {
+        lastException.oneHitBreakpoint = false;
         printf ("Setting again \n");
         if (!bp->setAgain(debuggedProcessHandle))
         {
@@ -573,6 +595,7 @@ void debugger::handleSingleStep (EXCEPTION_DEBUG_INFO * exception)
     }
     else
     {
+        lastException.oneHitBreakpoint = true;
         log ("User single step reached at 0x%.16llx\n",logType::INFO,breakpointAddress);
     }
     lastException.exceptionType = (DWORD) exception->ExceptionRecord.ExceptionCode;
@@ -584,13 +607,14 @@ void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception)
     breakpoint * bp = searchForBreakpoint ( (void *) breakpointAddress);
     if (bp && bp->getType() == breakpointType::SOFTWARE_TYPE) // user breakpoint
     {
+        bp->incrementHitCount ();
         log ("User software breakpoint reached at 0x%.16llx\n",logType::INFO,breakpointAddress);
         if (!bp->restore(debuggedProcessHandle))// restore original byte to continue execution
         {
             log ("Cannot restore breakpoint at 0x%.16llx\n",logType::INFO,breakpointAddress);   
         }
         bp->getIsOneHit() == 0 ? currentContext->EFlags |= 0x100 : currentContext->EFlags &= ~0x100;
-
+        bp->getIsOneHit() == 0 ? lastException.oneHitBreakpoint = 0 : lastException.oneHitBreakpoint = 1;
         lastException.exceptionType = (DWORD) exception->ExceptionRecord.ExceptionCode;
         lastException.rip = breakpointAddress;
 

@@ -60,6 +60,23 @@ e, exit
 
 Exit from debugger. CTRL-C not yet interrupts debugged execution, just exiting.
 
+```
+si, step in, s i
+```
+Step one instruction into.
+
+```
+ni, next instruction, n i
+```
+
+Step one instruction further in current frame
+
+```
+bl, show breakpoints, breakpoint list, b l, b list, breakpoint l
+```
+
+Show active breakpoints, their type and hit count.
+
 ## Features (for now)
 
 1. Provide information about debugger events sent and exceptions raised. 
@@ -67,9 +84,11 @@ Exit from debugger. CTRL-C not yet interrupts debugged execution, just exiting.
 3. Prepared program structure for automating commands (like gdb script).
 4. Ability to disassembly instructions at specified address.
 5. Shows context of actual thread after each interrupt of execution.
-4. Ability to manually set breakpoints.
+4. Ability to manually set breakpoints (one hit also).
 5. Automatic breakpoint at entrypoint.
 6. Colored output for cmd.exe.
+7. Next instruction and step in commands.
+8. Show actual breakpoints with their hit count
 
 ## Visual presentation 
 

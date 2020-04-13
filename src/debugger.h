@@ -25,6 +25,7 @@ enum class commandType
     STEP_IN = 8,
     DISASM = 9,
     TRACE_TO = 10,
+    SHOW_BREAKPOINTS = 11,
     UNKNOWN = 0xFF
 };
 enum logType
@@ -47,6 +48,7 @@ struct exceptionData
 {
     DWORD exceptionType;
     DWORD rip;
+    bool oneHitBreakpoint;
 };
 
 // HELPER FUNCTIONS 
@@ -78,6 +80,7 @@ class debugger
         void checkInterruptEvent ();
         breakpoint * searchForBreakpoint (void * address);
         void * getNextInstructionAddress (void *);
+        void showBreakpoints ();
 
         CONTEXT * currentContext; // shared resource, never used in paralel
         

@@ -26,5 +26,6 @@ class breakpoint
 		uint8_t getOriginalByte () { return originalByte; }
 		breakpointType getType () { return type; }
 		bool getIsOneHit () { return isOneHit; }
+		uint64_t getHitCount () { return hitCount; } 
 
 };
