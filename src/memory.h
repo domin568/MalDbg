@@ -1,0 +1,7 @@
+class memoryMappings
+{
+	private:
+
+	public:
+		
+};

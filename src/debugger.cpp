@@ -18,9 +18,9 @@ t_GetFinalPathNameByHandleA GetFinalPathNameByHandleA()
     return f_GetFinalPathNameByHandleA;
 }
 
-uint64_t parseStringToAddress (std::string toConvert)
+void * parseStringToAddress (std::string toConvert)
 {
-    uint64_t address;
+    void * address;
     sscanf (toConvert.c_str(),"%x", &address);
     return address;
 }
@@ -72,7 +72,7 @@ void * debugger::getNextInstructionAddress (void * ref)
     }
     
 }
-void debugger::disasmAt (uint64_t address, int numberOfInstructions)
+void debugger::disasmAt (void * address, int numberOfInstructions)
 {
     std::vector <breakpoint *> disassembledBreakpoints;
     uint8_t * codeBuffer = new uint8_t [100];
@@ -90,7 +90,7 @@ void debugger::disasmAt (uint64_t address, int numberOfInstructions)
         return;
     }
 
-    count = cs_disasm (handle, codeBuffer, 100 , address, 0, &insn);
+    count = cs_disasm (handle, codeBuffer, 100 , (uint64_t)address, 0, &insn);
     if (count > 0)
     {
         for (int j = 0; j < (numberOfInstructions >= count ? count : numberOfInstructions); j++) // iterate over all instructions disassembled to find breakpoint locations
@@ -106,10 +106,10 @@ void debugger::disasmAt (uint64_t address, int numberOfInstructions)
 
                 if (bp->getType() == breakpointType::SOFTWARE_TYPE) // user software breakpoint
                 {
-                    size_t int3Offset = insn[j].address - address;
+                    size_t int3Offset = insn[j].address - (uint64_t) address;
                     codeBuffer [int3Offset] = bp->getOriginalByte();
                     cs_free (insn, count);
-                    count = cs_disasm (handle, codeBuffer, 100 , address, 0, &insn); // disassembly again
+                    count = cs_disasm (handle, codeBuffer, 100 , (uint64_t) address, 0, &insn); // disassembly again
                 }
             }
         }
@@ -189,7 +189,7 @@ void debugger::showContext ()
 
     printf ("\n");
 
-    disasmAt (lcContext->Rip, SHOW_CONTEXT_INSTRUCTION_COUNT);   
+    disasmAt ((void *)lcContext->Rip, SHOW_CONTEXT_INSTRUCTION_COUNT);   
 
     printf ("\n"); 
 }
@@ -248,23 +248,22 @@ DWORD debugger::run (std::string fileName)
             log ("WaitForDebugEven returned nonzero value\n",logType::ERR);
             return 2;
         }
+
         this->currentContext = getContext ();
         DWORD debugResponse = processDebugEvents(&currentDebugEvent, &debuggingActive);
+
         if (!bypassInterruptOnce)
         {
-            printf ("Not Bypassing\n");
             checkInterruptEvent ();          
             setContext (this->currentContext);
             ContinueDebugEvent (currentDebugEvent.dwProcessId,currentDebugEvent.dwThreadId,debugResponse); 
         }
         else 
         {
-            printf ("bypassing \n");
             bypassInterruptOnce = false;
             setContext (this->currentContext);
             ContinueDebugEvent (currentDebugEvent.dwProcessId,currentDebugEvent.dwThreadId,debugResponse);
         }
-
     }
     delete this->currentContext;
     return 0;
@@ -277,12 +276,14 @@ command * parseCommand (std::string c)
     std::regex contextRegex ("^(context)$");
     std::regex runRegex ("^(r|run)\\s*$");
     std::regex exitRegex ("^(e|exit)\\s*$");
-    std::regex softBreakpointRegex ("^(b|br|bp|breakpoint)\\s+(0x)?([0-9a-fA-F]+)$");
+    std::regex softBreakpointRegex ("^(b|br|bp|breakpoint)\\s+(0x)?([0-9a-fA-F]+)\\s*$");
     std::regex disasmRegex ("^(disasm|disassembly)\\s+(0x)?([0-9a-fA-F]+)\\s+((0x[0-9a-fA-F]+)|([0-9]+))$");
     std::regex stepInRegex ("^(si|step in|s i)\\s*$");
     std::regex nextInstructionRegex ("^(ni|next instruction|n i)\\s*$");
-    std::regex showBreakpointsRegex ("^(bl|show breakpoints| breakpoint list|b l|b list| breakpoint l)\\s*$");
-
+    std::regex showBreakpointsRegex ("^(bl|show breakpoints|b l|b list)\\s*$");
+    std::regex removeBreakpointRegex ("^(bd|b delete|breakpoint delete)\\s+(([0-9]+)|0x([0-9a-fA-F]+))$");
+    // |(0x[0-9a-fA-F]+)
+    // \\s+([0-9]+)\\s*
     std::smatch continueMatches;
     std::smatch contextMatches;
     std::smatch runMatches;
@@ -292,6 +293,7 @@ command * parseCommand (std::string c)
     std::smatch stepInMatches;
     std::smatch nextInstructionMatches;
     std::smatch showBreakpointsMatches;
+    std::smatch removeBreakpointMatches;
 
 
     if (std::regex_search (c, continueMatches, continueRegex))
@@ -332,7 +334,20 @@ command * parseCommand (std::string c)
     else if (std::regex_match (c, softBreakpointMatches, softBreakpointRegex))
     {
         comm->type = commandType::SOFT_BREAKPOINT;
-        comm->arguments.push_back (softBreakpointMatches[3].str());
+        comm->arguments.push_back ( {argumentType::ADDRESS,softBreakpointMatches[3].str()} );
+        return comm;
+    }
+    else if (std::regex_match (c, removeBreakpointMatches, removeBreakpointRegex))
+    {
+        comm->type = commandType::BREAKPOINT_DELETE;
+        if (removeBreakpointMatches[3].str().length() > 0)
+        {
+            comm->arguments.push_back ( {argumentType::NUMBER, removeBreakpointMatches[2].str()} );
+        }
+        else if (removeBreakpointMatches[4].str().length() > 0)
+        {
+            comm->arguments.push_back ( {argumentType::ADDRESS, removeBreakpointMatches[4].str()} );
+        }
         return comm;
     }
     else if (std::regex_match (c, disasmMatches, disasmRegex))
@@ -346,8 +361,8 @@ command * parseCommand (std::string c)
             printf ("%i --> %s\n",i,disasmMatches[i].str().c_str());
         }
         */
-        comm->arguments.push_back (disasmMatches[3].str());
-        comm->arguments.push_back (disasmMatches[4].str());
+        comm->arguments.push_back ( {argumentType::ADDRESS, disasmMatches[3].str()} );
+        comm->arguments.push_back ( {argumentType::NUMBER, disasmMatches[4].str()} );
         return comm;
     }
 
@@ -363,6 +378,25 @@ void debugger::showBreakpoints ()
         j++;
     }
 }
+bool debugger::deleteBreakpointByAddress (void * address)
+{
+    for (auto it = std::begin (breakpoints); it != std::end (breakpoints); ++it) 
+    {
+        if (it->getAddress() == address)
+        {
+            breakpoints.erase (it);
+            return true;
+        }
+    }
+    return false;
+}
+bool debugger::deleteBreakpointByIndex (uint64_t number)
+{
+    if (number < breakpoints.size())
+    {
+        breakpoints.erase (breakpoints.begin() + number);
+    }
+}
 void debugger::handleCommands(command * currentCommand)
 {
     if (currentCommand->type == commandType::CONTINUE)
@@ -376,13 +410,26 @@ void debugger::handleCommands(command * currentCommand)
     }
     else if (currentCommand->type == commandType::SOFT_BREAKPOINT)
     {
-        uint64_t breakpointAddress = parseStringToAddress(currentCommand->arguments[0]);
-        placeSoftwareBreakpoint ((void *)breakpointAddress, false);
+        void * breakpointAddress = parseStringToAddress(currentCommand->arguments[0].arg);
+        placeSoftwareBreakpoint (breakpointAddress, false);
+    }
+    else if (currentCommand->type == commandType::BREAKPOINT_DELETE)
+    {
+        if (currentCommand->arguments[0].type == argumentType::ADDRESS)
+        {
+            void * address = parseStringToAddress (currentCommand->arguments[0].arg);
+            deleteBreakpointByAddress (address);
+        }
+        else if (currentCommand->arguments[0].type == argumentType::NUMBER)
+        {
+            int breakpointNumber = parseStringToNumber (currentCommand->arguments[0].arg);
+            deleteBreakpointByIndex (breakpointNumber);
+        }
     }
     else if (currentCommand->type == commandType::DISASM)
     {
-        uint64_t address = parseStringToAddress(currentCommand->arguments[0]);
-        int numberOfInstructions = parseStringToNumber(currentCommand->arguments[1]);
+        void * address = parseStringToAddress(currentCommand->arguments[0].arg);
+        int numberOfInstructions = parseStringToNumber(currentCommand->arguments[1].arg);
         disasmAt (address,numberOfInstructions);
     }
     else if (currentCommand->type == commandType::SHOW_BREAKPOINTS)
@@ -421,7 +468,6 @@ void debugger::handleCommands(command * currentCommand)
     {
         if (lastException.exceptionType == EXCEPTION_BREAKPOINT && !lastException.oneHitBreakpoint) // single_step after breakpoint restoring breakpoint but we do not want to interrupt that time
         {
-            printf ("Ostatnim exceptionem byl breakpoint \n");
             bypassInterruptOnce = true;
         }
         void * addr = getNextInstructionAddress ( (void *) currentContext->Rip);
@@ -559,9 +605,12 @@ void debugger::placeSoftwareBreakpoint (void * address, bool oneHit)
     breakpoint newBreakpoint (address, breakpointType::SOFTWARE_TYPE, oneHit);
     if (!newBreakpoint.set (debuggedProcessHandle))
     {
-        log ("Cannot set breakpoitn at %.16llx\n",logType::ERR,address, address);
+        log ("Cannot set breakpoint at %.16llx\n",logType::ERR,address, address);
     }
-    breakpoints.push_back (newBreakpoint);
+    else
+    {
+        breakpoints.push_back (newBreakpoint);
+    }
 }
 
 debugger::debugger (std::string fileName)
@@ -586,7 +635,6 @@ void debugger::handleSingleStep (EXCEPTION_DEBUG_INFO * exception)
     if (bp && !bp->getIsOneHit() && lastException.exceptionType == EXCEPTION_BREAKPOINT)
     {
         lastException.oneHitBreakpoint = false;
-        printf ("Setting again \n");
         if (!bp->setAgain(debuggedProcessHandle))
         {
             log ("Cannot set breakpoint again (in single step exception)\n",logType::ERR);

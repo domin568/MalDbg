@@ -11,6 +11,7 @@
 #include <capstone/capstone.h>
 
 #include "breakpoint.h"
+#include "memory.h"
 
 enum class commandType
 {
@@ -26,6 +27,7 @@ enum class commandType
     DISASM = 9,
     TRACE_TO = 10,
     SHOW_BREAKPOINTS = 11,
+    BREAKPOINT_DELETE = 12,
     UNKNOWN = 0xFF
 };
 enum logType
@@ -39,10 +41,20 @@ enum logType
     INFO = 15,
     CONTEXT_REGISTERS = 31
 };
+enum class argumentType
+{
+    ADDRESS = 0,
+    NUMBER = 1
+};
+struct commandArgument
+{
+    argumentType type;
+    std::string arg;
+};
 struct command
 {
     commandType type;
-    std::vector <std::string> arguments;
+    std::vector <commandArgument> arguments;
 };
 struct exceptionData
 {
@@ -53,7 +65,7 @@ struct exceptionData
 
 // HELPER FUNCTIONS 
 
-uint64_t parseStringToAddress (std::string);
+void * parseStringToAddress (std::string);
 int parseStringToNumber (std::string);
 
 class debugger
@@ -76,11 +88,13 @@ class debugger
         CONTEXT * getContext ();
         void setContext (CONTEXT *);
         void showContext ();
-        void disasmAt (uint64_t, int);
+        void disasmAt (void *, int);
         void checkInterruptEvent ();
         breakpoint * searchForBreakpoint (void * address);
         void * getNextInstructionAddress (void *);
         void showBreakpoints ();
+        bool deleteBreakpointByAddress (void *);
+        bool deleteBreakpointByIndex (uint64_t);
 
         CONTEXT * currentContext; // shared resource, never used in paralel
         
