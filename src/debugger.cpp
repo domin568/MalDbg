@@ -225,7 +225,11 @@ DWORD debugger::run (std::string fileName)
        log ("Cannot start debugged process\n",logType::ERR, stdoutHandle);
        return 1;
     }
+
     debuggedProcessHandle = pi.hProcess;
+
+    memHelper = new memoryHelper (debuggedProcessHandle, stdoutHandle);
+
     while (debuggingActive)
     {
         ZeroMemory ( &currentDebugEvent, sizeof(currentDebugEvent));
@@ -254,114 +258,6 @@ DWORD debugger::run (std::string fileName)
     }
     delete this->currentContext;
     return 0;
-}
-command * parseCommand (std::string c)
-{
-    command * comm = new command ();
-
-    std::regex continueRegex ("^(c|cont|continue)\\s*$");
-    std::regex contextRegex ("^(context)$");
-    std::regex runRegex ("^(r|run)\\s*$");
-    std::regex exitRegex ("^(e|exit)\\s*$");
-    std::regex softBreakpointRegex ("^(b|br|bp|breakpoint)\\s+(0x)?([0-9a-fA-F]+)\\s*$");
-    std::regex disasmRegex ("^(disasm|disassembly)\\s+(0x)?([0-9a-fA-F]+)\\s+((0x[0-9a-fA-F]+)|([0-9]+))$");
-    std::regex stepInRegex ("^(si|step in|s i)\\s*$");
-    std::regex nextInstructionRegex ("^(ni|next instruction|n i)\\s*$");
-    std::regex showBreakpointsRegex ("^(bl|show breakpoints|b l|b list)\\s*$");
-    std::regex removeBreakpointRegex ("^(bd|b delete|breakpoint delete)\\s+(([0-9]+)|0x([0-9a-fA-F]+))$");
-    std::regex memoryMappingsRegex ("^(vmmap|memory mappings|map)\\s*$");
-    // |(0x[0-9a-fA-F]+)
-    // \\s+([0-9]+)\\s*
-    std::smatch continueMatches;
-    std::smatch contextMatches;
-    std::smatch runMatches;
-    std::smatch exitMatches;
-    std::smatch softBreakpointMatches;
-    std::smatch disasmMatches;
-    std::smatch stepInMatches;
-    std::smatch nextInstructionMatches;
-    std::smatch showBreakpointsMatches;
-    std::smatch removeBreakpointMatches;
-    std::smatch memoryMappingsMatches;
-
-
-    if (std::regex_search (c, continueMatches, continueRegex))
-    {
-        comm->type = commandType::CONTINUE;
-        return comm;
-    }
-    else if (std::regex_search (c, memoryMappingsMatches, memoryMappingsRegex))
-    {
-        comm->type = commandType::SHOW_MEMORY_REGIONS;
-        return comm;
-    }
-    else if (std::regex_search (c, stepInMatches, stepInRegex))
-    {
-        comm->type = commandType::STEP_IN;
-        return comm;
-    }
-    else if (std::regex_search (c, nextInstructionMatches, nextInstructionRegex))
-    {
-        comm->type = commandType::NEXT_INSTRUCTION;    
-        return comm;
-    }
-    else if (std::regex_search (c, runMatches, runRegex))
-    {
-        comm->type = commandType::RUN;
-        return comm;   
-    }
-    else if (std::regex_search (c, exitMatches, exitRegex))
-    {
-        comm->type = commandType::EXIT;
-        return comm;   
-    }
-    else if (std::regex_search (c, contextMatches, contextRegex))
-    {
-        comm->type = commandType::CONTEXT;
-        return comm;   
-    }
-    else if (std::regex_search (c, showBreakpointsMatches, showBreakpointsRegex))
-    {
-        comm->type = commandType::SHOW_BREAKPOINTS;
-        return comm;
-    }
-    else if (std::regex_match (c, softBreakpointMatches, softBreakpointRegex))
-    {
-        comm->type = commandType::SOFT_BREAKPOINT;
-        comm->arguments.push_back ( {argumentType::ADDRESS,softBreakpointMatches[3].str()} );
-        return comm;
-    }
-    else if (std::regex_match (c, removeBreakpointMatches, removeBreakpointRegex))
-    {
-        comm->type = commandType::BREAKPOINT_DELETE;
-        if (removeBreakpointMatches[3].str().length() > 0)
-        {
-            comm->arguments.push_back ( {argumentType::NUMBER, removeBreakpointMatches[2].str()} );
-        }
-        else if (removeBreakpointMatches[4].str().length() > 0)
-        {
-            comm->arguments.push_back ( {argumentType::ADDRESS, removeBreakpointMatches[4].str()} );
-        }
-        return comm;
-    }
-    else if (std::regex_match (c, disasmMatches, disasmRegex))
-    {
-        comm->type = commandType::DISASM;
-        /*
-        // code for testing regexes
-
-        for (int i = 0; i < disasmMatches.size(); i++)
-        {
-            printf ("%i --> %s\n",i,disasmMatches[i].str().c_str());
-        }
-        */
-        comm->arguments.push_back ( {argumentType::ADDRESS, disasmMatches[3].str()} );
-        comm->arguments.push_back ( {argumentType::NUMBER, disasmMatches[4].str()} );
-        return comm;
-    }
-
-    comm->type = commandType::UNKNOWN;
-    return comm;
 }
 void debugger::showBreakpoints ()
 {
@@ -411,6 +307,12 @@ void debugger::handleCommands(command * currentCommand)
     {
         currentMemoryMap->updateMemoryMap (debuggedProcessHandle);
         currentMemoryMap->showMemoryMap (stdoutHandle);
+    }
+    else if (currentCommand->type == commandType::HEXDUMP)
+    {
+        void * address = parseStringToAddress (currentCommand->arguments[0].arg);
+        uint32_t size = parseStringToNumber (currentCommand->arguments[1].arg);
+        memHelper->printHexdump (address, size);
     }
     else if (currentCommand->type == commandType::BREAKPOINT_DELETE)
     {
@@ -661,7 +563,7 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
 
             currentMemoryMap = new memoryMap ();
             currentMemoryMap->updateMemoryMap (debuggedProcessHandle);
-            
+
             return DBG_CONTINUE;
         }
         case EXIT_PROCESS_DEBUG_EVENT:
@@ -673,6 +575,7 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
             SetEvent (commandEvent);
             *debuggingActive = false;
             delete currentMemoryMap;
+            delete memHelper;
             return DBG_CONTINUE;
         }
         case EXIT_THREAD_DEBUG_EVENT:

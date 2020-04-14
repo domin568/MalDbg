@@ -78,7 +78,7 @@ bl, show breakpoints, breakpoint list, b l, b list, breakpoint l
 Show active breakpoints, their type and hit count.
 
 ```
-bd, b delete, breakpoint delete
+bd, b delete, breakpoint delete <index/address>
 ```
 
 Delete breakpoint by index (providing decimal number) or by address (providing hexadecimal address).
@@ -88,6 +88,12 @@ vmmap, memory mappings, map
 ```
 
 Show map of whole virtual memory for this process.
+
+```
+hexdump, h, hex <address> <size>
+```
+
+Print 8 byte width hexdump with ASCII at specified address of given size. 
 
 ## Features (for now)
 

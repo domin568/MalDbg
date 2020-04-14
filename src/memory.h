@@ -43,3 +43,16 @@ class memoryMap
 		void setProtectStateType (MEMORY_BASIC_INFORMATION mbi, memoryRegion *);
 
 };
+
+class memoryHelper
+{
+	private:
+		HANDLE processHandle;
+		HANDLE stdoutHandle;
+		static constexpr int hexdumpWidth = 8;
+	public:
+		memoryHelper (HANDLE, HANDLE);
+		bool printHexdump (void *, uint32_t);
+		bool writeIntAt (uint64_t, void *, uint32_t);
+		
+};

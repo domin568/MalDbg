@@ -4,9 +4,9 @@ project (${PROJECT_NAME} VERSION 0.0.1)
 set(CMAKE_BUILD_TYPE Release)
 set (CMAKE_CXX_STANDARD 17)
 
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)  # temporary 
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)  # temporary 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)  # temporary
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})  # temporary 
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})  # temporary 
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})  # temporary
 
 set ( M_CAPSTONE "capstone" )
 set (CAPSTONE_DIR "${CMAKE_SOURCE_DIR}/${M_CAPSTONE}" CACHE PATH "Capstone main path")
@@ -47,7 +47,7 @@ include_directories (${CAPSTONE_INC})
 set (CAPSTONE_LIB $<TARGET_FILE:capstone-static> CACHE FILE CapstoneLib)
 
 set (EXECUTABLE_NAME ${PROJECT_NAME})
-set (SOURCE_FILES src/debugger.cpp src/main.cpp src/debugger.h src/breakpoint.h src/breakpoint.cpp)
+set (SOURCE_FILES src/debugger.cpp src/main.cpp src/debugger.h src/breakpoint.h src/breakpoint.cpp src/memory.cpp src/memory.h src/utils.h src/utils.cpp)
 
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_COMPILER_FLAGS}")
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${CXX_LINKER_FLAGS}")

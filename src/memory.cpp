@@ -131,3 +131,45 @@ void memoryMap::showMemoryMap (HANDLE stdoutHandle)
 	}
 	printf ("-------------------------------------------------------------------------------\n");
 }
+memoryHelper::memoryHelper (HANDLE processHandle, HANDLE stdoutHandle)
+{
+	this->processHandle = processHandle;
+	this->stdoutHandle = stdoutHandle;
+}
+bool memoryHelper::printHexdump (void * address, uint32_t size)
+{
+	uint8_t * b = new uint8_t [size];
+	SIZE_T bytesRead;
+	uint64_t currentAddress = (uint64_t) address; 
+	if (!ReadProcessMemory (processHandle, (LPVOID) address, b, size, &bytesRead))
+	{
+		log ("Cannot read memory for hexdump\n", logType::ERR, stdoutHandle);
+		return false;
+	}
+
+	uint32_t bytesLeft = bytesRead;
+
+	for (int i = 0 ; i < bytesRead; i+=hexdumpWidth)
+	{
+		printf ("%.16llx | ", currentAddress+i);
+		for (int j = 0 ; j < (bytesLeft < hexdumpWidth ? bytesLeft : hexdumpWidth); j++)
+		{
+			printf ("%.02x ", (int) b[i+j]);
+		}
+		if (bytesLeft < hexdumpWidth)
+		{
+			for (int k = 0; k < hexdumpWidth - bytesLeft; k++)
+			{
+				printf ("   ");
+			}
+		}
+		printf ("| ");
+		for (int j = 0 ; j < (bytesLeft < hexdumpWidth ? bytesLeft : hexdumpWidth); j++)
+		{
+			printf ("%c",b[i+j]);
+		}
+		printf ("\n");
+		bytesLeft -= hexdumpWidth;
+	}
+	delete b;
+}

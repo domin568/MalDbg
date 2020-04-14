@@ -7,7 +7,6 @@
 #include <iostream>
 #include <mutex>
 #include <queue>
-#include <regex>
 #include <set>
 #include <vector>
 #include <capstone/capstone.h>
@@ -16,48 +15,12 @@
 #include "memory.h"
 #include "utils.h"
 
-enum class commandType
-{
-    RUN = 0,
-    CONTINUE = 1,
-    EXIT = 2,
-    CONTEXT = 3,
-    SOFT_BREAKPOINT = 4,
-    HARD_BREAKPOINT = 5,
-    MAP = 6,
-    NEXT_INSTRUCTION = 7,
-    STEP_IN = 8,
-    DISASM = 9,
-    TRACE_TO = 10,
-    SHOW_BREAKPOINTS = 11,
-    BREAKPOINT_DELETE = 12,
-    SHOW_MEMORY_REGIONS = 13,
-    UNKNOWN = 0xFF
-};
-
-enum class argumentType
-{
-    ADDRESS = 0,
-    NUMBER = 1
-};
-struct commandArgument
-{
-    argumentType type;
-    std::string arg;
-};
-struct command
-{
-    commandType type;
-    std::vector <commandArgument> arguments;
-};
 struct exceptionData
 {
     DWORD exceptionType;
     DWORD rip;
     bool oneHitBreakpoint;
 };
-
-// HELPER FUNCTIONS 
 
 class debugger
 {
@@ -88,6 +51,7 @@ class debugger
 
         CONTEXT * currentContext; // shared resource, never used in paralel
         memoryMap * currentMemoryMap;
+        memoryHelper * memHelper;
         
         uint64_t debuggedProcessBaseAddress;
 
