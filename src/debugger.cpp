@@ -2,10 +2,7 @@
 #include <strsafe.h>
 #include "debugger.h"
 
-// vec.erase(std::remove(vec.begin(), vec.end(), 8), vec.end());
-
-
-typedef DWORD (*t_GetFinalPathNameByHandleA) (HANDLE hFile,LPSTR lpszFilePath, DWORD cchFilePath, DWORD dwFlags);
+typedef DWORD (*t_GetFinalPathNameByHandleA) (HANDLE, LPSTR, DWORD, DWORD);
 
 t_GetFinalPathNameByHandleA GetFinalPathNameByHandleA()
 {
@@ -18,18 +15,8 @@ t_GetFinalPathNameByHandleA GetFinalPathNameByHandleA()
     return f_GetFinalPathNameByHandleA;
 }
 
-void * parseStringToAddress (std::string toConvert)
-{
-    void * address;
-    sscanf (toConvert.c_str(),"%x", &address);
-    return address;
-}
-int parseStringToNumber (std::string toConvert)
-{
-    int number;
-    sscanf (toConvert.c_str(), "%i", &number);
-    return number;
-}
+// vec.erase(std::remove(vec.begin(), vec.end(), 8), vec.end());
+
 breakpoint * debugger::searchForBreakpoint (void * address)
 {
     for (auto & i : breakpoints)
@@ -46,7 +33,7 @@ void * debugger::getNextInstructionAddress (void * ref)
     uint8_t * codeBuffer = new uint8_t [50];
     if (!ReadProcessMemory (debuggedProcessHandle, (LPCVOID) ref, codeBuffer, 50 , NULL))
     {
-        log ("Cannot read memory at %.16llx\n",logType::ERR, ref);
+        log ("Cannot read memory at %.16llx\n",logType::ERR, stdoutHandle,  ref);
         delete codeBuffer;
         return nullptr;
     }
@@ -78,7 +65,7 @@ void debugger::disasmAt (void * address, int numberOfInstructions)
     uint8_t * codeBuffer = new uint8_t [100];
     if (!ReadProcessMemory (debuggedProcessHandle, (LPCVOID) address, codeBuffer, 100 , NULL))
     {
-        log ("Cannot read memory at %.16llx\n",logType::ERR,address);
+        log ("Cannot read memory at %.16llx\n",logType::ERR, stdoutHandle, address);
         return;
     }
     csh handle;
@@ -120,12 +107,12 @@ void debugger::disasmAt (void * address, int numberOfInstructions)
             {
                 if ((void *) insn[j].address == a->getAddress() && a->getType() == breakpointType::SOFTWARE_TYPE && !a->getIsOneHit())
                 {
-                    printfColor ("0x%.16llx:\t%s\t\t%s\n", 12, insn[j].address, insn[j].mnemonic, insn[j].op_str); // breakpoint line spotted
+                    printfColor ("0x%.16llx:\t%s\t\t%s\n", 12, stdoutHandle, insn[j].address, insn[j].mnemonic, insn[j].op_str); // breakpoint line spotted
                     breakpointShown = true;
                 }
                 else if ((void *) insn[j].address == a->getAddress() && a->getType() == breakpointType::HARDWARE_TYPE)
                 {
-                    printfColor ("0x%.16llx:\t%s\t\t%s\n", 9, insn[j].address, insn[j].mnemonic, insn[j].op_str);
+                    printfColor ("0x%.16llx:\t%s\t\t%s\n", 9, stdoutHandle,  insn[j].address, insn[j].mnemonic, insn[j].op_str);
                     breakpointShown = true;
                 }
             }
@@ -138,7 +125,7 @@ void debugger::disasmAt (void * address, int numberOfInstructions)
     }
     else
     {
-        log ("Cannot disassembly memory at %.16llx\n",logType::ERR, address);
+        log ("Cannot disassembly memory at %.16llx\n",logType::ERR, stdoutHandle,  address);
     }
     cs_close (&handle);
     delete codeBuffer;
@@ -150,12 +137,12 @@ CONTEXT * debugger::getContext ()
     HANDLE threadHandle = OpenThread (THREAD_GET_CONTEXT, FALSE, currentDebugEvent.dwThreadId);
     if (threadHandle == NULL)
     {
-        log ("Cannot get handle to thread that caused exception",logType::ERR);
+        log ("Cannot get handle to thread that caused exception",logType::ERR, stdoutHandle);
         return NULL;
     }
     if (!GetThreadContext(threadHandle, lcContext))
     {
-        log ("Cannot get thread context that caused exception",logType::ERR);
+        log ("Cannot get thread context that caused exception",logType::ERR, stdoutHandle);
         return NULL;
     }
     return lcContext;
@@ -165,7 +152,7 @@ void debugger::setContext (CONTEXT * context)
     HANDLE threadHandle = OpenThread (THREAD_SET_CONTEXT, FALSE, currentDebugEvent.dwThreadId);
     if (!SetThreadContext(threadHandle, context))
     {
-        log ("Cannot set thread context",logType::ERR);
+        log ("Cannot set thread context",logType::ERR, stdoutHandle);
         return;
     }
 }
@@ -177,13 +164,13 @@ void debugger::showContext ()
 
     DWORD flg = lcContext->EFlags;
 
-    log ("RAX %.16llx RBX %.16llx RCX %.16llx\nRDX %.16llx RSI %.16llx RDI %.16llx",logType::CONTEXT_REGISTERS,
+    log ("RAX %.16llx RBX %.16llx RCX %.16llx\nRDX %.16llx RSI %.16llx RDI %.16llx",logType::CONTEXT_REGISTERS, stdoutHandle, 
         lcContext->Rax, lcContext->Rbx, lcContext->Rcx, lcContext->Rdx, lcContext->Rsi, lcContext->Rdi);
-    log ("R8  %.16llx R9  %.16llx R10 %.16llx\nR11 %.16llx R12 %.16llx R13 %.16llx\nR14 %.16llx R15 %.16llx FLG %.16llx",logType::CONTEXT_REGISTERS,
+    log ("R8  %.16llx R9  %.16llx R10 %.16llx\nR11 %.16llx R12 %.16llx R13 %.16llx\nR14 %.16llx R15 %.16llx FLG %.16llx",logType::CONTEXT_REGISTERS, stdoutHandle, 
         lcContext->R8, lcContext->R9, lcContext->R10, lcContext->R11, lcContext->R12, lcContext->R13, lcContext->R14, lcContext->R15, lcContext->EFlags);
-    log ("RIP %.16llx RBP %.016x RSP %.016x", logType::CONTEXT_REGISTERS, lcContext->Rip, lcContext->Rbp, lcContext->Rsp);
+    log ("RIP %.16llx RBP %.016x RSP %.016x", logType::CONTEXT_REGISTERS, stdoutHandle, lcContext->Rip, lcContext->Rbp, stdoutHandle,  lcContext->Rsp);
 
-    log ("ZF %.1x CF %.1x PF %.1x AF %.1x SF %.1x TF %.1x IF %.1x DF %.1x OF %.1x",logType::CONTEXT_REGISTERS,
+    log ("ZF %.1x CF %.1x PF %.1x AF %.1x SF %.1x TF %.1x IF %.1x DF %.1x OF %.1x",logType::CONTEXT_REGISTERS, stdoutHandle, 
         (flg & (1 << 6)) >> 6, flg & 1, (flg & (1 << 2)) >> 2, (flg & (1 << 4)) >> 4, (flg & (1 << 7)) >> 7, (flg & (1 << 8)) >> 8,
         (flg & (1 << 9)) >> 9, (flg & (1 << 10)) >> 10, (flg & (1 << 11)) >> 11 );
 
@@ -235,7 +222,7 @@ DWORD debugger::run (std::string fileName)
     
     if (!CreateProcess (fileName.c_str(),NULL,NULL,NULL,TRUE,DEBUG_PROCESS,NULL,NULL,&si,&pi))
     {
-       log ("Cannot start debugged process\n",logType::ERR);
+       log ("Cannot start debugged process\n",logType::ERR, stdoutHandle);
        return 1;
     }
     debuggedProcessHandle = pi.hProcess;
@@ -245,7 +232,7 @@ DWORD debugger::run (std::string fileName)
 
         if (!WaitForDebugEvent (&currentDebugEvent,INFINITE))
         {
-            log ("WaitForDebugEven returned nonzero value\n",logType::ERR);
+            log ("WaitForDebugEven returned nonzero value\n",logType::ERR, stdoutHandle);
             return 2;
         }
 
@@ -282,6 +269,7 @@ command * parseCommand (std::string c)
     std::regex nextInstructionRegex ("^(ni|next instruction|n i)\\s*$");
     std::regex showBreakpointsRegex ("^(bl|show breakpoints|b l|b list)\\s*$");
     std::regex removeBreakpointRegex ("^(bd|b delete|breakpoint delete)\\s+(([0-9]+)|0x([0-9a-fA-F]+))$");
+    std::regex memoryMappingsRegex ("^(vmmap|memory mappings|map)\\s*$");
     // |(0x[0-9a-fA-F]+)
     // \\s+([0-9]+)\\s*
     std::smatch continueMatches;
@@ -294,11 +282,17 @@ command * parseCommand (std::string c)
     std::smatch nextInstructionMatches;
     std::smatch showBreakpointsMatches;
     std::smatch removeBreakpointMatches;
+    std::smatch memoryMappingsMatches;
 
 
     if (std::regex_search (c, continueMatches, continueRegex))
     {
         comm->type = commandType::CONTINUE;
+        return comm;
+    }
+    else if (std::regex_search (c, memoryMappingsMatches, memoryMappingsRegex))
+    {
+        comm->type = commandType::SHOW_MEMORY_REGIONS;
         return comm;
     }
     else if (std::regex_search (c, stepInMatches, stepInRegex))
@@ -374,7 +368,7 @@ void debugger::showBreakpoints ()
     int j = 0;
     for (auto & i : breakpoints)
     {
-        log ("Breakpoint [%d] address %.16llx oneHit %d hitCount %d\n",logType::INFO, j, i.getAddress(), i.getIsOneHit(), i.getHitCount());
+        log ("Breakpoint [%d] address %.16llx oneHit %d hitCount %d\n",logType::INFO, stdoutHandle, j, i.getAddress(), i.getIsOneHit(), stdoutHandle,  i.getHitCount());
         j++;
     }
 }
@@ -413,6 +407,11 @@ void debugger::handleCommands(command * currentCommand)
         void * breakpointAddress = parseStringToAddress(currentCommand->arguments[0].arg);
         placeSoftwareBreakpoint (breakpointAddress, false);
     }
+    else if (currentCommand->type == commandType::SHOW_MEMORY_REGIONS)
+    {
+        currentMemoryMap->updateMemoryMap (debuggedProcessHandle);
+        currentMemoryMap->showMemoryMap (stdoutHandle);
+    }
     else if (currentCommand->type == commandType::BREAKPOINT_DELETE)
     {
         if (currentCommand->arguments[0].type == argumentType::ADDRESS)
@@ -440,7 +439,7 @@ void debugger::handleCommands(command * currentCommand)
     {
         if (debuggingActive)
         {
-            log ("The program is being debugged, running it again\n",logType::WARNING);
+            log ("The program is being debugged, running it again\n",logType::WARNING, stdoutHandle);
         }
         SetEvent (continueDebugEvent);
         debuggingActive = false;
@@ -477,7 +476,7 @@ void debugger::handleCommands(command * currentCommand)
         }
         else
         {
-            log ("Problem with next instruction command\n", logType::ERR);
+            log ("Problem with next instruction command\n", logType::ERR, stdoutHandle);
         }
         SetEvent (continueDebugEvent);
         commandModeActive = false;
@@ -498,13 +497,13 @@ void debugger::interactiveCommands ()
         commandModeActive = true;
         while (commandModeActive)
         {
-            log ("",logType::PROMPT);
+            log ("",logType::PROMPT, stdoutHandle);
             std::getline(std::cin, c);
             command * currentCommand = parseCommand (c);
 
             if (currentCommand->type == commandType::UNKNOWN)
             {
-                log ("Unknown command provided\n",logType::ERR);
+                log ("Unknown command provided\n",logType::ERR, stdoutHandle);
             }
             else
             {
@@ -524,88 +523,12 @@ void debugger::interactive ()
     }
     interactiveMode = false;
 }
-void debugger::printfColor (const char * format, DWORD color, ... )
-{
-    CONSOLE_SCREEN_BUFFER_INFO consoleInfo;
-    WORD savedAttributes;
-    GetConsoleScreenBufferInfo(stdoutHandle, &consoleInfo);
-    savedAttributes = consoleInfo.wAttributes;
-    SetConsoleTextAttribute(stdoutHandle, color);
-    va_list args;
-    va_start(args, color);
-    vprintf (format,args); // vprintf when we do not know how many arguments we gonna pass
-    va_end (args);
-    SetConsoleTextAttribute(stdoutHandle, savedAttributes);
-}
-void debugger::log (const char * messageFormatted, logType type, ...)
-{   
-    CONSOLE_SCREEN_BUFFER_INFO consoleInfo;
-    WORD savedAttributes;
-    GetConsoleScreenBufferInfo(stdoutHandle, &consoleInfo);
-    savedAttributes = consoleInfo.wAttributes;
-
-    SetConsoleTextAttribute(stdoutHandle, type);
-    switch (type)
-    {
-        case logType::CONTEXT_REGISTERS:
-        {
-            va_list args;
-            va_start(args, type);
-            vprintf (messageFormatted,args); // vprintf when we do not know how many arguments we gonna pass
-            va_end (args);
-            SetConsoleTextAttribute(stdoutHandle, savedAttributes);
-            printf ("\n");
-            return;
-        }
-        case logType::THREAD:
-        {
-            printf ("[+] ");
-            break;
-        }
-        case logType::DLL:
-        {
-            printf ("[+] ");
-            break;
-        }
-        case logType::WARNING:
-        {
-            printf ("[!] ");
-            break;
-        }
-        case logType::PROMPT:
-        {
-            printf ("%s",promptString.c_str());
-            SetConsoleTextAttribute(stdoutHandle, savedAttributes);
-            return;
-        }
-        case logType::INFO:
-        {
-            printf ("[*] ");
-            break;
-        }
-        case logType::ERR:
-        {
-            printf ("[!] ");
-            break;
-        }
-        case logType::UNKNOWN_EVENT:
-        {
-            printf ("[?] ");
-            break;
-        }
-    }    
-    SetConsoleTextAttribute(stdoutHandle, savedAttributes);
-    va_list args;
-    va_start(args, type);
-    vprintf (messageFormatted,args); // vprintf when we do not know how many arguments we gonna pass
-    va_end (args);
-}
 void debugger::placeSoftwareBreakpoint (void * address, bool oneHit)
 {
     breakpoint newBreakpoint (address, breakpointType::SOFTWARE_TYPE, oneHit);
     if (!newBreakpoint.set (debuggedProcessHandle))
     {
-        log ("Cannot set breakpoint at %.16llx\n",logType::ERR,address, address);
+        log ("Cannot set breakpoint at %.16llx\n",logType::ERR,address, stdoutHandle,  address);
     }
     else
     {
@@ -637,14 +560,14 @@ void debugger::handleSingleStep (EXCEPTION_DEBUG_INFO * exception)
         lastException.oneHitBreakpoint = false;
         if (!bp->setAgain(debuggedProcessHandle))
         {
-            log ("Cannot set breakpoint again (in single step exception)\n",logType::ERR);
+            log ("Cannot set breakpoint again (in single step exception)\n",logType::ERR, stdoutHandle);
         }
         this->currentContext->EFlags &= ~0x100;
     }
     else
     {
         lastException.oneHitBreakpoint = true;
-        log ("User single step reached at 0x%.16llx\n",logType::INFO,breakpointAddress);
+        log ("User single step reached at 0x%.16llx\n",logType::INFO, stdoutHandle, breakpointAddress);
     }
     lastException.exceptionType = (DWORD) exception->ExceptionRecord.ExceptionCode;
     lastException.rip = breakpointAddress;
@@ -656,10 +579,10 @@ void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception)
     if (bp && bp->getType() == breakpointType::SOFTWARE_TYPE) // user breakpoint
     {
         bp->incrementHitCount ();
-        log ("User software breakpoint reached at 0x%.16llx\n",logType::INFO,breakpointAddress);
+        log ("User software breakpoint reached at 0x%.16llx\n",logType::INFO, stdoutHandle, breakpointAddress);
         if (!bp->restore(debuggedProcessHandle))// restore original byte to continue execution
         {
-            log ("Cannot restore breakpoint at 0x%.16llx\n",logType::INFO,breakpointAddress);   
+            log ("Cannot restore breakpoint at 0x%.16llx\n",logType::INFO, stdoutHandle, breakpointAddress);   
         }
         bp->getIsOneHit() == 0 ? currentContext->EFlags |= 0x100 : currentContext->EFlags &= ~0x100;
         bp->getIsOneHit() == 0 ? lastException.oneHitBreakpoint = 0 : lastException.oneHitBreakpoint = 1;
@@ -670,7 +593,7 @@ void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception)
     }
     else // system breakpoint
     {
-        log ("System breakpoint reached at 0x%.16llx\n", logType::INFO, breakpointAddress);
+        log ("System breakpoint reached at 0x%.16llx\n", logType::INFO, stdoutHandle,  breakpointAddress);
     }    
 }
 DWORD debugger::processExceptions (DEBUG_EVENT * event)
@@ -680,11 +603,11 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
     {
         if (exception->dwFirstChance)
         {
-            log ("First chance exception: ", logType::ERR);
+            log ("First chance exception: ", logType::ERR, stdoutHandle);
         }
         else if (!exception->dwFirstChance)
         {
-            log ("Last chance exception: ", logType::ERR);
+            log ("Last chance exception: ", logType::ERR, stdoutHandle);
         }   
     }
     switch (exception->ExceptionRecord.ExceptionCode)
@@ -716,7 +639,7 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
         }
         default:
         {
-            log ("Not implemented exception yet\n", logType::UNKNOWN_EVENT);
+            log ("Not implemented exception yet\n", logType::UNKNOWN_EVENT, stdoutHandle);
             return DBG_EXCEPTION_NOT_HANDLED;
         }
     }
@@ -731,10 +654,14 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
             CREATE_PROCESS_DEBUG_INFO * info = &event->u.CreateProcessInfo;
             GetFinalPathNameByHandleA () (info->hFile,modulePath,MAX_PATH+1,0);
             char * moduleName = PathFindFileNameA(modulePath + 4);
-            log ("%s loaded, base 0x%.16llx entrypoint 0x%.16llx\n",logType::INFO,moduleName, info->lpBaseOfImage, info->lpStartAddress);
+            log ("%s loaded, base 0x%.16llx entrypoint 0x%.16llx\n",logType::INFO, stdoutHandle, moduleName, info->lpBaseOfImage, info->lpStartAddress);
             debuggedProcessBaseAddress = (uint64_t) info->lpBaseOfImage;
             free (modulePath);
             breakpointEntryPoint (info);
+
+            currentMemoryMap = new memoryMap ();
+            currentMemoryMap->updateMemoryMap (debuggedProcessHandle);
+            
             return DBG_CONTINUE;
         }
         case EXIT_PROCESS_DEBUG_EVENT:
@@ -742,21 +669,22 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
             std::lock_guard<std::mutex> l_debuggingActive (m_debuggingActive);
 
             EXIT_PROCESS_DEBUG_INFO * infoProc = &event->u.ExitProcess;
-            log ("Process %u exited with code 0x%.08x\n", logType::INFO, event->dwProcessId ,infoProc->dwExitCode);
+            log ("Process %u exited with code 0x%.08x\n", logType::INFO, stdoutHandle, event->dwProcessId, infoProc->dwExitCode);
             SetEvent (commandEvent);
             *debuggingActive = false;
+            delete currentMemoryMap;
             return DBG_CONTINUE;
         }
         case EXIT_THREAD_DEBUG_EVENT:
         {
             EXIT_THREAD_DEBUG_INFO * infoThread = &event->u.ExitThread;
-            log ("Thread %u exited with code 0x%.08x\n", logType::THREAD, event->dwThreadId, infoThread->dwExitCode);
+            log ("Thread %u exited with code 0x%.08x\n", logType::THREAD, stdoutHandle, event->dwThreadId, infoThread->dwExitCode);
             return DBG_CONTINUE;
         }
         case CREATE_THREAD_DEBUG_EVENT:
         {
             CREATE_THREAD_DEBUG_INFO * infoThread = &event->u.CreateThread;
-            log ("Thread 0x%x created with entry address 0x%.16llx\n", logType::THREAD, event->dwThreadId, infoThread->lpStartAddress);
+            log ("Thread 0x%x created with entry address 0x%.16llx\n", logType::THREAD, stdoutHandle, event->dwThreadId, infoThread->lpStartAddress);
             return DBG_CONTINUE;
         }
         case LOAD_DLL_DEBUG_EVENT:
@@ -765,14 +693,14 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
             LOAD_DLL_DEBUG_INFO * loadInfo = &event->u.LoadDll;
             GetFinalPathNameByHandleA()(loadInfo->hFile,dllPath,MAX_PATH+1,0);
             char * dllName = PathFindFileNameA(dllPath + 4);
-            log ("%s loaded (0x%.16llx)\n",logType::DLL,dllName,loadInfo->lpBaseOfDll);
+            log ("%s loaded (0x%.16llx)\n",logType::DLL, stdoutHandle, dllName, loadInfo->lpBaseOfDll);
             free (dllPath);
             return DBG_CONTINUE;
         }
         case UNLOAD_DLL_DEBUG_EVENT: // do not work with implicit loaded libraries ?
         {
             UNLOAD_DLL_DEBUG_INFO * unloadInfo = &event->u.UnloadDll;
-            log ("0x%.16llx DLL unloaded\n",logType::DLL,unloadInfo->lpBaseOfDll);
+            log ("0x%.16llx DLL unloaded\n",logType::DLL, stdoutHandle, unloadInfo->lpBaseOfDll);
             return DBG_CONTINUE;
         }
         case EXCEPTION_DEBUG_EVENT:
@@ -782,7 +710,7 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
         }
         default:
         {
-            log ("Not implemented debug event yet \n", logType::UNKNOWN_EVENT);
+            log ("Not implemented debug event yet \n", logType::UNKNOWN_EVENT, stdoutHandle);
             return DBG_EXCEPTION_NOT_HANDLED;
         }
     }

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <windows.h>
 #include <string>
 #include <stdio.h>
@@ -12,6 +14,7 @@
 
 #include "breakpoint.h"
 #include "memory.h"
+#include "utils.h"
 
 enum class commandType
 {
@@ -28,19 +31,10 @@ enum class commandType
     TRACE_TO = 10,
     SHOW_BREAKPOINTS = 11,
     BREAKPOINT_DELETE = 12,
+    SHOW_MEMORY_REGIONS = 13,
     UNKNOWN = 0xFF
 };
-enum logType
-{
-    THREAD = 2,
-    DLL = 3,
-    WARNING = 5,
-    PROMPT = 6,
-    UNKNOWN_EVENT = 10,
-    ERR = 12,
-    INFO = 15,
-    CONTEXT_REGISTERS = 31
-};
+
 enum class argumentType
 {
     ADDRESS = 0,
@@ -65,9 +59,6 @@ struct exceptionData
 
 // HELPER FUNCTIONS 
 
-void * parseStringToAddress (std::string);
-int parseStringToNumber (std::string);
-
 class debugger
 {
     private:
@@ -83,8 +74,6 @@ class debugger
         void placeSoftwareBreakpoint (void *, bool);
         void interactiveCommands ();
         void handleCommands (command *);
-        void log (const char *, logType, ...);
-        void printfColor (const char *, DWORD, ...);
         CONTEXT * getContext ();
         void setContext (CONTEXT *);
         void showContext ();
@@ -93,15 +82,17 @@ class debugger
         breakpoint * searchForBreakpoint (void * address);
         void * getNextInstructionAddress (void *);
         void showBreakpoints ();
+        void showMemory ();
         bool deleteBreakpointByAddress (void *);
         bool deleteBreakpointByIndex (uint64_t);
 
         CONTEXT * currentContext; // shared resource, never used in paralel
+        memoryMap * currentMemoryMap;
         
         uint64_t debuggedProcessBaseAddress;
 
     	std::string fileName;
-        std::string promptString = "maldbg> ";
+
 
     	STARTUPINFO si;
     	PROCESS_INFORMATION pi;
@@ -119,6 +110,7 @@ class debugger
 
         //std::map <uint64_t,uint8_t> breakpointsStolenBytes;
         std::vector <breakpoint> breakpoints;
+        std::vector <memoryRegion> memoryRegions;
         std::set <DWORD> interruptingEvents;
         std::set <DWORD> interruptingExceptions;
 

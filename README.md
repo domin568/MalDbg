@@ -77,6 +77,18 @@ bl, show breakpoints, breakpoint list, b l, b list, breakpoint l
 
 Show active breakpoints, their type and hit count.
 
+```
+bd, b delete, breakpoint delete
+```
+
+Delete breakpoint by index (providing decimal number) or by address (providing hexadecimal address).
+
+``` 
+vmmap, memory mappings, map
+```
+
+Show map of whole virtual memory for this process.
+
 ## Features (for now)
 
 1. Provide information about debugger events sent and exceptions raised. 
@@ -88,7 +100,9 @@ Show active breakpoints, their type and hit count.
 5. Automatic breakpoint at entrypoint.
 6. Colored output for cmd.exe.
 7. Next instruction and step in commands.
-8. Show actual breakpoints with their hit count
+8. Show actual breakpoints with their hit count.
+9. Delete breakpoints by index or by address.
+10. Showing map of virtual memory for current process.
 
 ## Visual presentation 
 
