@@ -93,6 +93,7 @@ command * parseCommand (std::string c)
     std::regex removeBreakpointRegex ("^(bd|b delete|breakpoint delete)\\s+(([0-9]+)|0x([0-9a-fA-F]+))$");
     std::regex memoryMappingsRegex ("^(vmmap|memory mappings|map)\\s*$");
     std::regex hexdumpRegex ("^(h|hexdump|hex)\\s+0x([0-9a-fA-F]+)\\s+([0-9]+)\\s*$");
+    std::regex setRegistersRegex ("^(sr|set register)\\s+((R|r)(ax|AX|bx|BX|cx|CX|dx|DX|bp|BP|sp|SP|si|SI|di|DI|8|9|10|11|12|13|14|15|flags|FLAGS))\\s+(0x)?([0-9a-fA-F]+)\\s*$");
 
     std::smatch match;
 
@@ -134,6 +135,13 @@ command * parseCommand (std::string c)
     else if (std::regex_search (c, match, showBreakpointsRegex))
     {
         comm->type = commandType::SHOW_BREAKPOINTS;
+        return comm;
+    }
+    else if (std::regex_match (c, match, setRegistersRegex))
+    {
+        comm->type = commandType::SET_REGISTER;
+        comm->arguments.push_back ( { argumentType::STRING, match[2].str() } );
+        comm->arguments.push_back ( { argumentType::HEX_NUMBER, match[6].str() } );
         return comm;
     }
     else if (std::regex_match (c, match, softBreakpointRegex))
@@ -187,9 +195,16 @@ void* parseStringToAddress (std::string toConvert)
     sscanf (toConvert.c_str(),"%x", &address);
     return address;
 }
-int parseStringToNumber (std::string toConvert)
+int parseStringToNumber (std::string toConvert, int base = 10)
 {
     int number;
-    sscanf (toConvert.c_str(), "%i", &number);
+    if (base == 10)
+    {
+        sscanf (toConvert.c_str(), "%i", &number);
+    }
+    else if (base == 16)
+    {
+        sscanf (toConvert.c_str(), "%x", &number);
+    }
     return number;
 }

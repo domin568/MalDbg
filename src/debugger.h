@@ -48,6 +48,7 @@ class debugger
         void showMemory ();
         bool deleteBreakpointByAddress (void *);
         bool deleteBreakpointByIndex (uint64_t);
+        void setRegisterWithValue (std::string, uint64_t);
 
         CONTEXT * currentContext; // shared resource, never used in paralel
         memoryMap * currentMemoryMap;

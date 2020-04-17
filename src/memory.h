@@ -54,5 +54,5 @@ class memoryHelper
 		memoryHelper (HANDLE, HANDLE);
 		bool printHexdump (void *, uint32_t);
 		bool writeIntAt (uint64_t, void *, uint32_t);
-		
+				
 };

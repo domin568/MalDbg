@@ -4,11 +4,7 @@ std::string memoryProtection::toString ()
 {
 	return (read == 1 ? std::string("R") : std::string("-")) + (write == 1 ? std::string("W") : std::string("-")) + (execute == 1 ? std::string("X") : std::string("-")) + (copy == 1 ? std::string("C") : std::string("-")) + (guard == 1 ? std::string("G") : std::string("-"));
 }
-
-memoryMap::memoryMap ()
-{
-
-}
+memoryMap::memoryMap () {}
 void memoryMap::setProtectStateType (MEMORY_BASIC_INFORMATION mbi, memoryRegion * region)
 {
 	if (mbi.Type == MEM_IMAGE)

@@ -35,13 +35,16 @@ enum class commandType
     BREAKPOINT_DELETE = 12,
     SHOW_MEMORY_REGIONS = 13,
     HEXDUMP = 14,
+    SET_REGISTER = 15,
     UNKNOWN = 0xFF
 };
 
 enum class argumentType
 {
     ADDRESS = 0,
-    NUMBER = 1
+    NUMBER = 1,
+    STRING = 2,
+    HEX_NUMBER = 3
 };
 struct commandArgument
 {
@@ -58,4 +61,4 @@ void printfColor (const char *, DWORD, HANDLE, ... );
 void log (const char *, logType, HANDLE,  ...);
 command * parseCommand (std::string);
 void * parseStringToAddress (std::string);
-int parseStringToNumber (std::string);
+int parseStringToNumber (std::string, int);

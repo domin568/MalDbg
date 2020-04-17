@@ -168,7 +168,7 @@ void debugger::showContext ()
         lcContext->Rax, lcContext->Rbx, lcContext->Rcx, lcContext->Rdx, lcContext->Rsi, lcContext->Rdi);
     log ("R8  %.16llx R9  %.16llx R10 %.16llx\nR11 %.16llx R12 %.16llx R13 %.16llx\nR14 %.16llx R15 %.16llx FLG %.16llx",logType::CONTEXT_REGISTERS, stdoutHandle, 
         lcContext->R8, lcContext->R9, lcContext->R10, lcContext->R11, lcContext->R12, lcContext->R13, lcContext->R14, lcContext->R15, lcContext->EFlags);
-    log ("RIP %.16llx RBP %.016x RSP %.016x", logType::CONTEXT_REGISTERS, stdoutHandle, lcContext->Rip, lcContext->Rbp, stdoutHandle,  lcContext->Rsp);
+    log ("RIP %.16llx RBP %.016x RSP %.016x", logType::CONTEXT_REGISTERS, stdoutHandle, lcContext->Rip, lcContext->Rbp, lcContext->Rsp);
 
     log ("ZF %.1x CF %.1x PF %.1x AF %.1x SF %.1x TF %.1x IF %.1x DF %.1x OF %.1x",logType::CONTEXT_REGISTERS, stdoutHandle, 
         (flg & (1 << 6)) >> 6, flg & 1, (flg & (1 << 2)) >> 2, (flg & (1 << 4)) >> 4, (flg & (1 << 7)) >> 7, (flg & (1 << 8)) >> 8,
@@ -287,6 +287,77 @@ bool debugger::deleteBreakpointByIndex (uint64_t number)
         breakpoints.erase (breakpoints.begin() + number);
     }
 }
+void debugger::setRegisterWithValue (std::string registerString, uint64_t value)
+{
+    if (registerString == "rax" | registerString == "RAX" )
+    {
+        currentContext->Rax = value;
+    }
+    else if (registerString == "rbx" | registerString == "RBX" )
+    {
+        currentContext->Rbx = value;
+    }
+    else if (registerString == "rcx" | registerString == "RCX" )
+    {
+        currentContext->Rcx = value;
+    }
+    else if (registerString == "rdx" | registerString == "RDX" )
+    {
+        currentContext->Rdx = value;
+    }
+    else if (registerString == "rbp" | registerString == "RBP" )
+    {
+        currentContext->Rbp = value;
+    }
+    else if (registerString == "rsp" | registerString == "RSP" )
+    {
+        currentContext->Rsp = value;
+    }
+    else if (registerString == "rdi" | registerString == "RDI" )
+    {
+        currentContext->Rdi = value;
+    }
+    else if (registerString == "rsi" | registerString == "RSI" )
+    {
+        currentContext->Rsi = value;
+    }
+    else if (registerString == "r8" | registerString == "R8" )
+    {
+        currentContext->R8 = value;
+    }
+    else if (registerString == "r9" | registerString == "R9" )
+    {
+        currentContext->R9 = value;
+    }
+    else if (registerString == "r10" | registerString == "R10" )
+    {
+        currentContext->R10 = value;
+    }
+    else if (registerString == "r11" | registerString == "R11" )
+    {
+        currentContext->R11 = value;
+    }
+    else if (registerString == "r12" | registerString == "R12" )
+    {
+        currentContext->R12 = value;
+    }
+    else if (registerString == "r13" | registerString == "R13" )
+    {
+        currentContext->R13 = value;
+    }  
+    else if (registerString == "r14" | registerString == "R14" )
+    {
+        currentContext->R14 = value;
+    }  
+    else if (registerString == "r15" | registerString == "R15" )
+    {
+        currentContext->R15 = value;
+    }  
+    else if (registerString == "rflags" | registerString == "RFLAGS" )
+    {
+        currentContext->EFlags = value;
+    }              
+}
 void debugger::handleCommands(command * currentCommand)
 {
     if (currentCommand->type == commandType::CONTINUE)
@@ -308,10 +379,16 @@ void debugger::handleCommands(command * currentCommand)
         currentMemoryMap->updateMemoryMap (debuggedProcessHandle);
         currentMemoryMap->showMemoryMap (stdoutHandle);
     }
+    else if (currentCommand->type == commandType::SET_REGISTER)
+    {
+        std::string registerString = currentCommand->arguments[0].arg;
+        uint64_t value = parseStringToNumber (currentCommand->arguments[1].arg, 16);
+        setRegisterWithValue (currentCommand->arguments[0].arg, value);
+    }
     else if (currentCommand->type == commandType::HEXDUMP)
     {
         void * address = parseStringToAddress (currentCommand->arguments[0].arg);
-        uint32_t size = parseStringToNumber (currentCommand->arguments[1].arg);
+        uint32_t size = parseStringToNumber (currentCommand->arguments[1].arg, 10);
         memHelper->printHexdump (address, size);
     }
     else if (currentCommand->type == commandType::BREAKPOINT_DELETE)
@@ -323,14 +400,14 @@ void debugger::handleCommands(command * currentCommand)
         }
         else if (currentCommand->arguments[0].type == argumentType::NUMBER)
         {
-            int breakpointNumber = parseStringToNumber (currentCommand->arguments[0].arg);
+            int breakpointNumber = parseStringToNumber (currentCommand->arguments[0].arg, 10);
             deleteBreakpointByIndex (breakpointNumber);
         }
     }
     else if (currentCommand->type == commandType::DISASM)
     {
         void * address = parseStringToAddress(currentCommand->arguments[0].arg);
-        int numberOfInstructions = parseStringToNumber(currentCommand->arguments[1].arg);
+        int numberOfInstructions = parseStringToNumber(currentCommand->arguments[1].arg, 10);
         disasmAt (address,numberOfInstructions);
     }
     else if (currentCommand->type == commandType::SHOW_BREAKPOINTS)
