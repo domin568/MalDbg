@@ -94,10 +94,16 @@ command * parseCommand (std::string c)
     std::regex memoryMappingsRegex ("^(vmmap|memory mappings|map)\\s*$");
     std::regex hexdumpRegex ("^(h|hexdump|hex)\\s+0x([0-9a-fA-F]+)\\s+([0-9]+)\\s*$");
     std::regex setRegistersRegex ("^(sr|set register)\\s+((R|r)(ax|AX|bx|BX|cx|CX|dx|DX|bp|BP|sp|SP|si|SI|di|DI|8|9|10|11|12|13|14|15|flags|FLAGS))\\s+(0x)?([0-9a-fA-F]+)\\s*$");
-
+    std::regex writeMemoryRegex ("^(wm|write memory)\\s+((0x)([0-9a-fA-F]+))\\s+([0-9]+)\\s+((0x)?([0-9a-fA-F]+))");
+    std::regex helpRegex ("^help\\s*$");
     std::smatch match;
 
-    if (std::regex_search (c, match, continueRegex))
+    if (std::regex_search(c, match, helpRegex))
+    {
+        comm->type = commandType::HELP;
+        return comm;
+    }
+    else if (std::regex_search (c, match, continueRegex))
     {
         comm->type = commandType::CONTINUE;
         return comm;
@@ -135,6 +141,15 @@ command * parseCommand (std::string c)
     else if (std::regex_search (c, match, showBreakpointsRegex))
     {
         comm->type = commandType::SHOW_BREAKPOINTS;
+        return comm;
+    }
+    else if (std::regex_match(c, match, writeMemoryRegex))
+    {
+        comm->type = commandType::WRITE_MEMORY_INT;
+
+        comm->arguments.push_back ( { argumentType::ADDRESS, match[4].str() } );
+        comm->arguments.push_back ( { argumentType::NUMBER, match[5].str() } );
+        comm->arguments.push_back ( { argumentType::HEX_NUMBER, match[8].str() } );
         return comm;
     }
     else if (std::regex_match (c, match, setRegistersRegex))
@@ -207,4 +222,21 @@ int parseStringToNumber (std::string toConvert, int base = 10)
         sscanf (toConvert.c_str(), "%x", &number);
     }
     return number;
+}
+void printHelp ()
+{
+    puts ("r, run - run or restart program\n");
+    puts ("breakpoint, b, bp, br <hex address> - place int3 breakpoint\n");
+    puts ("context - show context of current thread\n");
+    puts("disasm, disassembly <hex address> <count_decimal> - disassembly code at given address\n");
+    puts ("continue, c - continue execution of program\n");
+    puts ("exit, e - exit from debugger\n");
+    puts ("step in, si, s i - step in by single instruction\n");
+    puts ("next instruction, ni, n i - step by single instruction\n");
+    puts ("show breakpoints, bl, breakpoint list - show active breakpoints\n");
+    puts ("breakpoint delete, bd, b delete <index/hex address> - delete breakpoint by index (obtained by bl) or address\n");
+    puts ("memory mappings, vmmap, map - show map of whole virtual memory for this process\n");
+    puts ("hexdump, hex, h <hex address> <size_decimal>\n");
+    puts ("set register, sr <register name> <hex value> - sets specified register with given value\n");
+    puts ("write memory, wm <hex address> <size_decimal> <hex value>\n");
 }

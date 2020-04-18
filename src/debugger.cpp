@@ -360,7 +360,11 @@ void debugger::setRegisterWithValue (std::string registerString, uint64_t value)
 }
 void debugger::handleCommands(command * currentCommand)
 {
-    if (currentCommand->type == commandType::CONTINUE)
+    if (currentCommand->type == commandType::HELP)
+    {
+        printHelp ();
+    }
+    else if (currentCommand->type == commandType::CONTINUE)
     {
         if (lastException.exceptionType == EXCEPTION_BREAKPOINT) // single_step after breakpoint restoring breakpoint but we do not want to interrupt that time
         {
@@ -373,6 +377,13 @@ void debugger::handleCommands(command * currentCommand)
     {
         void * breakpointAddress = parseStringToAddress(currentCommand->arguments[0].arg);
         placeSoftwareBreakpoint (breakpointAddress, false);
+    }
+    else if (currentCommand->type == commandType::WRITE_MEMORY_INT)
+    {
+        void * address = parseStringToAddress (currentCommand->arguments[0].arg);
+        uint32_t size = parseStringToNumber (currentCommand->arguments[1].arg, 10); // maximum 8 bytes
+        uint64_t value = parseStringToNumber (currentCommand->arguments[2].arg, 16);
+        memHelper->writeIntAt (value, address, size);
     }
     else if (currentCommand->type == commandType::SHOW_MEMORY_REGIONS)
     {

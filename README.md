@@ -25,6 +25,12 @@ maldbg <exe>
 ## Commands
 
 ```
+help
+```
+
+Show help information.
+
+```
 r, run 
 ```
 
@@ -95,6 +101,18 @@ hexdump, h, hex <address> <size>
 
 Print 8 byte width hexdump with ASCII at specified address of given size. 
 
+```
+sr, set register <register> <hex value>
+```
+
+Sets register (rax, rcx, rflags...) with desired value.
+
+```
+write memory, wm <hex address> <size decimal> <hex value>
+```
+
+Write integer value at specified address up to 8 bytes.
+
 ## Features (for now)
 
 1. Provide information about debugger events sent and exceptions raised. 
@@ -109,7 +127,14 @@ Print 8 byte width hexdump with ASCII at specified address of given size.
 8. Show actual breakpoints with their hit count.
 9. Delete breakpoints by index or by address.
 10. Showing map of virtual memory for current process.
+11. Setting registers with desired values.
+12. Printiing hexdump of memory.
+13. Writing integer values to memory (up to 8 bytes)
 
 ## Visual presentation 
 
 ![](screen.png) 
+
+## TODO 
+- callstack.
+- vmmap with names (need to parse PE files).

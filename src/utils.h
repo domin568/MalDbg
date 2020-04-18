@@ -36,6 +36,8 @@ enum class commandType
     SHOW_MEMORY_REGIONS = 13,
     HEXDUMP = 14,
     SET_REGISTER = 15,
+    WRITE_MEMORY_INT = 16,
+    HELP = 17,
     UNKNOWN = 0xFF
 };
 
@@ -62,3 +64,4 @@ void log (const char *, logType, HANDLE,  ...);
 command * parseCommand (std::string);
 void * parseStringToAddress (std::string);
 int parseStringToNumber (std::string, int);
+void printHelp ();

@@ -169,3 +169,12 @@ bool memoryHelper::printHexdump (void * address, uint32_t size)
 	}
 	delete b;
 }
+bool memoryHelper::writeIntAt (uint64_t value, void * addr, uint32_t size)
+{
+	if (!WriteProcessMemory (processHandle, (LPVOID) addr, &value, size, NULL))
+	{
+		log ("Cannot write memory at specified address %.16llx\n", logType::ERR, stdoutHandle, addr);
+		return false;
+	}
+	return true;
+}
