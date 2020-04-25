@@ -10,10 +10,12 @@
 #include <set>
 #include <vector>
 #include <capstone/capstone.h>
+#include <map>
 
 #include "breakpoint.h"
 #include "memory.h"
 #include "utils.h"
+#include "peParser.h"
 
 struct exceptionData
 {
@@ -28,6 +30,7 @@ class debugger
 
         static constexpr int SHOW_CONTEXT_INSTRUCTION_COUNT = 10;
 
+        void checkWOW64 ();
         DWORD run (std::string);
         DWORD processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive);
         DWORD processExceptions (DEBUG_EVENT * event);
@@ -49,12 +52,15 @@ class debugger
         bool deleteBreakpointByAddress (void *);
         bool deleteBreakpointByIndex (uint64_t);
         void setRegisterWithValue (std::string, uint64_t);
+        
+
 
         CONTEXT * currentContext; // shared resource, never used in paralel
         memoryMap * currentMemoryMap;
         memoryHelper * memHelper;
         
         uint64_t debuggedProcessBaseAddress;
+        int32_t wow64;
 
     	std::string fileName;
 
@@ -78,6 +84,7 @@ class debugger
         std::vector <memoryRegion> memoryRegions;
         std::set <DWORD> interruptingEvents;
         std::set <DWORD> interruptingExceptions;
+
 
     	DEBUG_EVENT currentDebugEvent;
 

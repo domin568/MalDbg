@@ -387,8 +387,8 @@ void debugger::handleCommands(command * currentCommand)
     }
     else if (currentCommand->type == commandType::SHOW_MEMORY_REGIONS)
     {
-        currentMemoryMap->updateMemoryMap (debuggedProcessHandle);
-        currentMemoryMap->showMemoryMap (stdoutHandle);
+        currentMemoryMap->updateMemoryMap ();
+        currentMemoryMap->showMemoryMap ();
     }
     else if (currentCommand->type == commandType::SET_REGISTER)
     {
@@ -646,12 +646,10 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
             char * moduleName = PathFindFileNameA(modulePath + 4);
             log ("%s loaded, base 0x%.16llx entrypoint 0x%.16llx\n",logType::INFO, stdoutHandle, moduleName, info->lpBaseOfImage, info->lpStartAddress);
             debuggedProcessBaseAddress = (uint64_t) info->lpBaseOfImage;
+            checkWOW64 ();
             free (modulePath);
             breakpointEntryPoint (info);
-
-            currentMemoryMap = new memoryMap ();
-            currentMemoryMap->updateMemoryMap (debuggedProcessHandle);
-
+            currentMemoryMap = new memoryMap (debuggedProcessHandle, wow64);
             return DBG_CONTINUE;
         }
         case EXIT_PROCESS_DEBUG_EVENT:
@@ -706,6 +704,15 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
         }
     }
     return DBG_EXCEPTION_NOT_HANDLED;
+}
+void debugger::checkWOW64 ()
+
+{
+    if (!IsWow64Process (debuggedProcessHandle, &wow64))
+    {
+        log ("Cannot determine is process running under WOW64 subsystem by IsWow64Process() %s \n", logType::ERR, stdoutHandle);
+        throw std::exception ();
+    }
 }
 
 // MANUAL FUNCTIONS

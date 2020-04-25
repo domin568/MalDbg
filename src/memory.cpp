@@ -1,10 +1,33 @@
 #include "memory.h"
 
+typedef NTSTATUS (*pNtQueryInformationProcess) (HANDLE, DWORD, PVOID, ULONG, PULONG);
+
+pNtQueryInformationProcess NtQueryInformationProcess()
+{
+    static pNtQueryInformationProcess fNtQueryInformationProcess = NULL;
+    if (!fNtQueryInformationProcess)
+    {
+        HMODULE hNtdll = GetModuleHandle("ntdll.dll"); // loaded in every process not needed to load library
+        fNtQueryInformationProcess = (pNtQueryInformationProcess) GetProcAddress(hNtdll, "NtQueryInformationProcess");
+    }
+    return fNtQueryInformationProcess;
+}
+
 std::string memoryProtection::toString ()
 {
 	return (read == 1 ? std::string("R") : std::string("-")) + (write == 1 ? std::string("W") : std::string("-")) + (execute == 1 ? std::string("X") : std::string("-")) + (copy == 1 ? std::string("C") : std::string("-")) + (guard == 1 ? std::string("G") : std::string("-"));
 }
-memoryMap::memoryMap () {}
+std::string memoryRegion::toString ()
+{
+	return name + " " + std::to_string (start) + " " + std::to_string (size) + " " + protection.toString() + " " + state + " " + type;
+}
+
+memoryMap::memoryMap (HANDLE processHandle, int wow64) 
+{
+	this->processHandle = processHandle;
+	this->wow64 = wow64;
+	stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+}
 void memoryMap::setProtectStateType (MEMORY_BASIC_INFORMATION mbi, memoryRegion * region)
 {
 	if (mbi.Type == MEM_IMAGE)
@@ -69,14 +92,14 @@ void memoryMap::setProtectStateType (MEMORY_BASIC_INFORMATION mbi, memoryRegion 
 			prot.guard = 1;
 		}
 
-		region->protection = prot.toString ();
+		region->protection = prot;
 	}
 	else if (mbi.State == MEM_RESERVE)
 	{
 		region->state = "RESERVED";
 	}
 }
-void memoryMap::updateMemoryMap (HANDLE processHandle)
+void memoryMap::updateMemoryMap ()
 {
 	baseRegions.clear ();
 	MEMORY_BASIC_INFORMATION mbi;
@@ -84,6 +107,14 @@ void memoryMap::updateMemoryMap (HANDLE processHandle)
 	size_t bytesReturned;
 	uint64_t pageStart = 0;
 	uint64_t lastAllocationBase = 0;
+
+	std::vector <moduleData> modules = getModulesLoaded ();
+
+	for (auto & module : modules)
+	{
+		PEparser parser (processHandle, module.VAaddress);
+		module.sections = parser.getPESections();
+	}
 	do
 	{
 		bytesReturned = VirtualQueryEx (processHandle, (LPVOID) pageStart, &mbi, sizeof(mbi));
@@ -91,8 +122,6 @@ void memoryMap::updateMemoryMap (HANDLE processHandle)
 
 		if (mbi.State != MEM_FREE)
 		{
-			//printf ("BaseAddress %.16llx AllocationBase %.16llx RegionSize %.16llx \n", mbi.BaseAddress, mbi.AllocationBase, mbi.RegionSize);
-
 			if ((uint64_t) mbi.AllocationBase != lastAllocationBase) // new baseRegion
 			{
 				baseRegion newBaseRegion;
@@ -112,21 +141,221 @@ void memoryMap::updateMemoryMap (HANDLE processHandle)
 		pageStart += mbi.RegionSize;
 	}
 	while (bytesReturned);
+
+	// now we have to join memory sections with their protections
+	for (auto & baseRegion : baseRegions)
+	{
+		for (const auto & module : modules)
+		{
+			if (baseRegion.base == module.VAaddress)
+			{
+				std::vector <memoryRegion> regions;
+
+				memoryRegion header = baseRegion.memRegions[0];
+				std::wstring wName ( module.name, (module.nameSize <= 40 ? module.nameSize / 2 : 20));
+				std::string sName ( wName.begin(), wName.end() );
+				header.name = sName; // PWSTR to std::string
+				regions.push_back (header);
+
+				for ( auto & [key, val] : module.sections )
+				{
+					memoryRegion memRegion;
+
+					memRegion.start = val.address;
+					memRegion.protection = protectionForAddr (memRegion.start);
+					memRegion.name = val.name;
+					memRegion.size = val.size;
+					memRegion.type = typeForAddr (memRegion.start);
+					memRegion.state = stateForAddr (memRegion.start);
+					regions.push_back (memRegion);
+					//printf ("%s\n", memRegion.toString().c_str());
+          		}
+          		baseRegion.memRegions.clear();
+          		baseRegion.memRegions = regions;
+			}
+		}
+	}
 }
-void memoryMap::showMemoryMap (HANDLE stdoutHandle)
+void memoryMap::showMemoryMap ()
 {
 	printf ("|    Address     |      Size      |        Name        |  State | Type | Prot |\n");
 	printf ("-------------------------------------------------------------------------------\n");
-	for (const auto & i : baseRegions)
+	for (auto & i : baseRegions)
 	{
 		//printf ("Base %.16llx \n", i.base);
-		for (const auto & j : i.memRegions)
+		for (auto & j : i.memRegions)
 		{
-			printf ("|%.16llx|%.16llx|                    |%.8s|  %.3s | %.5s|\n", j.start, j.size, j.state.c_str(), j.type.c_str(), j.protection.c_str());
+			printf ("|%.16llx|%.16llx|", j.start, j.size);
+			centerText (j.name.c_str() ,20);
+			printf ("|%.8s|  %.3s | %.5s|\n", j.state.c_str(), j.type.c_str(), j.protection.toString().c_str());
 		}
 	}
 	printf ("-------------------------------------------------------------------------------\n");
 }
+memoryProtection memoryMap::protectionForAddr (uint64_t addr)
+{
+	for (const auto & i : baseRegions)
+	{
+		for (const auto & j : i.memRegions)
+		{
+			if (addr >= j.start && (uint64_t) addr < j.start + j.size)
+			{
+				return j.protection;
+			}
+		}
+	}
+}
+std::string memoryMap::stateForAddr (uint64_t addr)
+{
+	for (const auto & i : baseRegions)
+	{
+		for (const auto & j : i.memRegions)
+		{
+			if (addr >= j.start && (uint64_t) addr < j.start + j.size)
+			{
+				return j.state;
+			}
+		}
+	}
+}
+std::string memoryMap::typeForAddr (uint64_t addr)
+{
+	for (const auto & i : baseRegions)
+	{
+		for (const auto & j : i.memRegions)
+		{
+			if (addr >= j.start && (uint64_t) addr < j.start + j.size)
+			{
+				return j.type;
+			}
+		}
+	}
+}
+DWORD memoryMap::memoryProtectionToDWORD (memoryProtection prot) // kinda noobish
+{
+	DWORD toRet = 0;
+	if (!prot.execute && !prot.read && !prot.write && !prot.copy)
+	{
+		toRet = PAGE_NOACCESS;
+	}
+	else if (prot.execute && !prot.read && !prot.write && !prot.copy)
+	{
+		toRet = PAGE_EXECUTE;
+	}
+	else if (prot.execute && prot.read && !prot.write && !prot.copy)
+	{
+		toRet = PAGE_EXECUTE_READ;
+	}
+	else if (prot.execute && prot.read && prot.write && !prot.copy)
+	{
+		toRet = PAGE_EXECUTE_READWRITE;
+	}
+	else if (prot.execute && prot.read && prot.write && prot.copy)
+	{
+		toRet = PAGE_EXECUTE_WRITECOPY;
+	}
+	else if (!prot.execute && prot.read && !prot.write && !prot.copy)
+	{
+		toRet = PAGE_READONLY;
+	}
+	else if (!prot.execute && prot.read && prot.write && prot.copy)
+	{
+		toRet = PAGE_WRITECOPY;
+	}
+	if (prot.guard)
+	{
+		toRet |= PAGE_GUARD;
+	}
+	return toRet;
+}
+void memoryMap::setProtection (uint64_t address, uint64_t size, memoryProtection prot)
+{
+	DWORD protFlags = memoryProtectionToDWORD (prot);
+	DWORD oldProtFlags;
+	if (!VirtualProtectEx (processHandle, (void *) address, size, protFlags ,&oldProtFlags))
+	{
+		DWORD err = GetLastError();
+		log ("Cannot change protection on page with address %.16llx err %.08x\n",logType::ERR, stdoutHandle, address, err);
+		throw std::exception ();
+	}
+}
+void * memoryMap::getPEBaddr ()
+{
+    PROCESS_BASIC_INFORMATION processInfo;
+    NtQueryInformationProcess () (processHandle, 0, &processInfo, sizeof (processInfo), nullptr); // 0 - ProcessBasicInformation
+    return (void *) processInfo.PebBaseAddress;
+}
+std::vector <moduleData> memoryMap::getModulesLoaded ()
+{
+    void * PEBaddr = getPEBaddr ();
+    std::vector <moduleData> modules;
+
+    if (wow64)
+    {
+        // to test 
+    }
+    else
+    {
+        PEB64 peb;
+        if (!ReadProcessMemory (processHandle, (LPVOID) PEBaddr, &peb, sizeof (PEB64), NULL))
+        {
+            log ("Cannot read PEB64 of process \n", logType::ERR, stdoutHandle);
+            throw std::exception ();
+        }
+        PEB_LDR_DATA ldr;
+        if (!ReadProcessMemory (processHandle, (LPVOID) peb.Ldr, &ldr, sizeof (PEB_LDR_DATA), NULL))
+        {
+            log ("Cannot read peb.Ldr of process \n", logType::ERR, stdoutHandle);
+            throw std::exception ();
+        }
+        // till here good
+        LDR_TABLE64 currentModule;
+        if (!ReadProcessMemory (processHandle, (LPVOID) *ldr.InMemoryOrderModuleList, &currentModule, sizeof (LDR_TABLE64), NULL))
+        {
+            log ("Cannot read ldr.InMemoryOrderModuleList of process \n", logType::ERR, stdoutHandle);
+            throw std::exception ();
+        }
+        PWSTR dllName = (PWSTR) new uint8_t [currentModule.BaseDllName.Length];
+        if (!ReadProcessMemory (processHandle, (LPVOID) currentModule.BaseDllName._Buffer, dllName, currentModule.BaseDllName.Length, NULL))
+        {
+            log ("Cannot read UNICODE_STRING dllName \n", logType::ERR, stdoutHandle);
+            throw std::exception ();
+        }
+
+        moduleData m;
+        m.VAaddress = (uint64_t) currentModule.DllBase;
+        m.name = dllName;
+        m.nameSize = currentModule.BaseDllName.Length;
+        modules.push_back (m);
+
+        while (currentModule.InMemoryOrderLinks.Flink)
+        {
+            if (!ReadProcessMemory (processHandle, (LPVOID) currentModule.InMemoryOrderLinks.Flink, &currentModule, sizeof (LDR_TABLE64), NULL))
+            {
+                log ("Cannot read currentModule.InMemoryOrderLinks.Flink \n", logType::ERR, stdoutHandle);
+                throw std::exception ();
+            }   
+            if (!currentModule.DllBase)
+            {
+                break;
+            }
+            PWSTR dllN = (PWSTR) new uint8_t [currentModule.BaseDllName.Length];
+            if (!ReadProcessMemory (processHandle, (LPVOID) currentModule.BaseDllName._Buffer, dllN, currentModule.BaseDllName.Length, NULL))
+            {
+                log ("Cannot read UNICODE_STRING dllName \n", logType::ERR, stdoutHandle);
+                throw std::exception ();
+            }
+            m.VAaddress = (uint64_t) currentModule.DllBase;
+            m.name = dllN;
+            m.nameSize = currentModule.BaseDllName.Length;
+            modules.push_back (m);
+        }
+    }
+    return modules;
+}
+
+// ******************************************************************************************************************************************
+
 memoryHelper::memoryHelper (HANDLE processHandle, HANDLE stdoutHandle)
 {
 	this->processHandle = processHandle;

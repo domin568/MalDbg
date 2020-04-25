@@ -240,3 +240,8 @@ void printHelp ()
     puts ("set register, sr <register name> <hex value> - sets specified register with given value\n");
     puts ("write memory, wm <hex address> <size_decimal> <hex value>\n");
 }
+void centerText(const char *text, int fieldWidth) 
+{
+    int padLen = (fieldWidth - strlen(text)) / 2;
+    printf("%*s%s%*s", padLen, " ", text, (strlen(text) % 2 == 1 ? padLen + 1 : padLen), " ");
+} 

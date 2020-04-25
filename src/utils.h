@@ -65,3 +65,4 @@ command * parseCommand (std::string);
 void * parseStringToAddress (std::string);
 int parseStringToNumber (std::string, int);
 void printHelp ();
+void centerText(const char *, int);

@@ -9,8 +9,14 @@ int main (int argc, char ** argv)
         return 1;
     }
     std::string debugged (argv[1]);
-    debugger d (debugged);
-    d.interactive ();
-    
+    try
+    {
+    	debugger d (debugged);
+    	d.interactive ();
+    }
+    catch (std::exception)
+    {
+    	return 1;
+    } 
     return 0;
 }

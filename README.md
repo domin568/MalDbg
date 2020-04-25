@@ -93,7 +93,7 @@ Delete breakpoint by index (providing decimal number) or by address (providing h
 vmmap, memory mappings, map
 ```
 
-Show map of whole virtual memory for this process.
+Show map of whole virtual memory for this process including modules and their sections names.
 
 ```
 hexdump, h, hex <address> <size>
@@ -120,16 +120,17 @@ Write integer value at specified address up to 8 bytes.
 3. Prepared program structure for automating commands (like gdb script).
 4. Ability to disassembly instructions at specified address.
 5. Shows context of actual thread after each interrupt of execution.
-4. Ability to manually set breakpoints (one hit also).
-5. Automatic breakpoint at entrypoint.
-6. Colored output for cmd.exe.
-7. Next instruction and step in commands.
-8. Show actual breakpoints with their hit count.
-9. Delete breakpoints by index or by address.
-10. Showing map of virtual memory for current process.
-11. Setting registers with desired values.
-12. Printiing hexdump of memory.
-13. Writing integer values to memory (up to 8 bytes)
+6. Ability to manually set breakpoints (one hit also).
+7. Automatic breakpoint at entrypoint.
+8. Colored output for cmd.exe.
+9. Next instruction and step in commands.
+10. Show actual breakpoints with their hit count.
+11. Delete breakpoints by index or by address.
+12. Showing map of virtual memory for current process.
+13. vmmap shows also names of modules and their sections.
+14. Setting registers with desired values.
+15. Printiing hexdump of memory.
+16. Writing integer values to memory (up to 8 bytes)
 
 ## Visual presentation 
 
@@ -137,4 +138,4 @@ Write integer value at specified address up to 8 bytes.
 
 ## TODO 
 - callstack.
-- vmmap with names (need to parse PE files).
+- vmmap with names (need to parse PE files). &#x2611;
