@@ -1,28 +1,65 @@
 #include "peParser.h"
 
-PEparser::PEparser (HANDLE processHandle, uint64_t baseAddress)
+PEparser::PEparser (HANDLE processHandle, uint64_t baseAddress) // IN MEMORY
 {
+	virtualMode = true;
 	stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
 	this->processHandle = processHandle;
 	this->baseAddress = (void *) baseAddress;
 
-	PEheaderAddr = getPEstructure ();
-	checkArch ();
-	readPEheader ();
-
-	//entryPoint = getEntryPoint ();
-	
+	PEheaderAddr = getPEstructureVirtual ();
+	checkArchVirtual ();
+	readPEheaderVirtual ();	
 }
-void  PEparser::readPEheader ()
+PEparser::PEparser (std::string exePath) // ON DISK
 {
-	uint32_t size = (wow64 == 0 ? sizeof(IMAGE_NT_HEADERS64) : sizeof (IMAGE_NT_HEADERS32));
-	if (!ReadProcessMemory (processHandle, (LPCVOID) PEheaderAddr, ntHeaders, size, NULL))
+	virtualMode = false;
+	stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
+	f = fopen (exePath.c_str(), "rb");
+	if (!f)
 	{
-		log ("Cannot read Image NT headers \n", logType::ERR, stdoutHandle);
+		log ("Cannot open PE file from path %s \n", logType::ERR, stdoutHandle, exePath.c_str());
 		throw std::exception ();
 	}
+	PEheaderAddr = (void *) getPEstructureFile ();
+	checkArchFile ();
+	readPEheaderFile ();	
+	
+	//fread ();
 }
-void PEparser::checkArch ()
+
+/* GET PE STRUCTURE */
+
+uint32_t PEparser::getPEstructureFile ()
+{
+	IMAGE_DOS_HEADER * dosHeader = new IMAGE_DOS_HEADER;
+	size_t ret = fread (dosHeader, sizeof (IMAGE_DOS_HEADER), 1, f);
+	if (ret != 1) // one element of IMAGE_DOS_HEADER
+	{
+		log ("Cannot read DOS header of executable\n", logType::ERR, stdoutHandle);
+		throw std::exception ();
+	}
+	delete dosHeader;
+	return dosHeader->e_lfanew;
+}
+void * PEparser::getPEstructureVirtual ()
+{
+	IMAGE_DOS_HEADER * dosHeader = new IMAGE_DOS_HEADER;
+	if (!ReadProcessMemory (processHandle, (LPCVOID) baseAddress, (uint8_t *) dosHeader, sizeof (IMAGE_DOS_HEADER), NULL))
+	{
+		log ("Cannot read DOS header of this executable\n", logType::ERR, stdoutHandle);
+		throw std::exception ();
+	}
+	void * PEaddr = (void *)((uint64_t )baseAddress + (uint64_t) dosHeader->e_lfanew);
+	delete dosHeader;
+	return PEaddr;
+}
+
+/* END  GET PE STRUCTURE */
+
+/* CHECK ARCH */
+
+void PEparser::checkArchVirtual ()
 {
 	uint8_t machineType [2];
 	if (!ReadProcessMemory (processHandle, (uint8_t *) PEheaderAddr + 4, machineType, 2, NULL))
@@ -44,21 +81,74 @@ void PEparser::checkArch ()
 		throw std::exception ();
 	}
 }
-IMAGE_SECTION_HEADER * PEparser::getSections (int * nSections)
+
+void PEparser::checkArchFile ()
 {
-	uint32_t size = (wow64 == 0 ? sizeof(IMAGE_NT_HEADERS64) : sizeof(IMAGE_NT_HEADERS32));
-	WORD numberOfSections;
+	fseek (f, (uint64_t) PEheaderAddr, 0); // move file to PE header offset 
+	fseek (f, 4, 1); // move file ptr 4 bytes forward
+	uint8_t machineType [2];
+	if ( fread (machineType, 1, 2, f) != 2 )
+	{
+		log ("Cannot read PE header signature\n", logType::ERR, stdoutHandle);
+		throw std::exception ();
+	}
+	if (!memcmp(machineType,"\x64\x86",2))
+	{
+		wow64 = false;
+	}
+	else if (!memcmp(machineType,"\x0c\x14",2))
+	{
+		wow64 = true;
+	}
+	else 
+	{
+		log ("File not supported, you are not gonna debug this program\n", logType::ERR, stdoutHandle);
+		throw std::exception ();
+	}
+	fseek (f, -6, 1); // go to PE header again
+}
+
+/* END CHECK ARCH */
+
+/* READ PE HEADER */
+
+void  PEparser::readPEheaderVirtual ()
+{
+	uint32_t size = (wow64 == 0 ? sizeof(IMAGE_NT_HEADERS64) : sizeof (IMAGE_NT_HEADERS32));
+	if (!ReadProcessMemory (processHandle, (LPCVOID) PEheaderAddr, ntHeaders, size, NULL))
+	{
+		log ("Cannot read Image NT headers \n", logType::ERR, stdoutHandle);
+		throw std::exception ();
+	}
+}
+void  PEparser::readPEheaderFile ()
+{
+	uint32_t size = (wow64 == 0 ? sizeof(IMAGE_NT_HEADERS64) : sizeof (IMAGE_NT_HEADERS32));
+	if (fread (ntHeaders, 1, size, f) != size)
+	{
+		log ("Cannot read Image NT headers \n", logType::ERR, stdoutHandle);
+		throw std::exception ();
+	}
 	if (wow64)
 	{
-		numberOfSections = ( (IMAGE_NT_HEADERS32*) ntHeaders)->FileHeader.NumberOfSections;
+		baseAddress = (void *)((IMAGE_NT_HEADERS32*) ntHeaders)->OptionalHeader.ImageBase;
 	}
-	else
+	else 
 	{
-		numberOfSections = ( (IMAGE_NT_HEADERS64*) ntHeaders)->FileHeader.NumberOfSections;
+		baseAddress = (void *) ((IMAGE_NT_HEADERS64*) ntHeaders)->OptionalHeader.ImageBase;
 	}
-	uint64_t sectionsStartAddr =  (uint64_t) PEheaderAddr + size;
+	
+}
 
-	*nSections = numberOfSections;
+/* END READ PE HEADER */
+
+/* GET SECTIONS */
+
+std::vector<IMAGE_SECTION_HEADER> PEparser::getSectionsVirtual ()
+{
+	uint32_t size = (wow64 == 0 ? sizeof(IMAGE_NT_HEADERS64) : sizeof(IMAGE_NT_HEADERS32));
+	WORD numberOfSections = getNumberOfSections();
+	uint64_t sectionsStartAddr =  (uint64_t) PEheaderAddr + size;
 
 	IMAGE_SECTION_HEADER * sections = new IMAGE_SECTION_HEADER [numberOfSections];
 
@@ -68,16 +158,93 @@ IMAGE_SECTION_HEADER * PEparser::getSections (int * nSections)
 		{
 			log ("Cannot read section from PE file\n", logType::ERR, stdoutHandle);
 			throw std::exception ();
+		}	
+	}
+	std::vector <IMAGE_SECTION_HEADER> toRet (sections, sections + numberOfSections);
+	delete sections;
+	return toRet;
+}
+
+std::vector<IMAGE_SECTION_HEADER> PEparser::getSectionsFile ()
+{
+	std::vector <IMAGE_SECTION_HEADER> toRet;
+
+	uint32_t size = (wow64 == 0 ? sizeof(IMAGE_NT_HEADERS64) : sizeof(IMAGE_NT_HEADERS32));
+	WORD numberOfSections = getNumberOfSections();
+	uint64_t sectionsStartAddr =  (uint64_t) PEheaderAddr + size;
+
+	IMAGE_SECTION_HEADER * sections = new IMAGE_SECTION_HEADER [numberOfSections];
+
+	if (fread (sections, sizeof (IMAGE_SECTION_HEADER), numberOfSections , f) != numberOfSections)
+	{
+		log ("Cannot read section headers from PE file\n", logType::ERR, stdoutHandle);
+		throw std::exception ();	
+	}
+	for (int i = 0 ; i < numberOfSections; i++)
+	{
+		toRet.push_back (sections[i]);
+	}
+	delete sections;
+	return toRet;
+}
+
+/* END GET SECTIONS */
+
+uint32_t PEparser::getNumberOfSections ()
+{
+	if (wow64)
+	{
+		return ( (IMAGE_NT_HEADERS32*) ntHeaders)->FileHeader.NumberOfSections;
+	}
+	else
+	{
+		return ( (IMAGE_NT_HEADERS64*) ntHeaders)->FileHeader.NumberOfSections;
+	}
+}
+
+uint64_t PEparser::getCoffSymbolTableOffset ()
+{
+	if (wow64)
+	{
+		return ((IMAGE_NT_HEADERS32*) ntHeaders)->FileHeader.PointerToSymbolTable;
+	}
+	else 
+	{
+		return ((IMAGE_NT_HEADERS64*) ntHeaders)->FileHeader.PointerToSymbolTable;
+	}
+}
+uint32_t PEparser::getCoffSymbolNumber ()
+{
+	if (wow64)
+	{
+		return ((IMAGE_NT_HEADERS32*) ntHeaders)->FileHeader.NumberOfSymbols;
+	}
+	else 
+	{
+		return ((IMAGE_NT_HEADERS64*) ntHeaders)->FileHeader.NumberOfSymbols;
+	}
+}
+
+uint64_t PEparser::fileOffsetToVirtualAddress (uint64_t fileOffset)
+{
+	std::vector<IMAGE_SECTION_HEADER> sections = (virtualMode == 1 ? getSectionsVirtual () : getSectionsFile ());
+	for (int i = 0 ; i < sections.size(); i++)
+	{
+		printf ("i = %i, fileOffset %.08x PointerToRawData %.08x VirtualAddress %.08x SizeOfRawData %.08x \n", i, fileOffset, sections[i].PointerToRawData, sections[i].VirtualAddress, sections[i].SizeOfRawData );
+		if (fileOffset>= sections[i].PointerToRawData && fileOffset < (sections[i].PointerToRawData + sections[i].SizeOfRawData))
+		{
+			uint64_t virtualAddress = (fileOffset - sections[i].PointerToRawData) + (uint64_t) baseAddress + sections[i].VirtualAddress;
+			printf ("%.16llx \n", virtualAddress);
+			return virtualAddress;
 		}
 	}
-	return sections;
 }
 std::map <uint64_t, section> PEparser::getPESections ()
 {
 	std::map <uint64_t, section> toRet;
-	int nSections;
-	IMAGE_SECTION_HEADER * sections = getSections (&nSections);
-	for (int i = 0 ; i < nSections; i++)
+
+	std::vector<IMAGE_SECTION_HEADER> sections = (virtualMode == 1 ? getSectionsVirtual () : getSectionsFile ());
+	for (int i = 0 ; i < sections.size(); i++)
 	{
 		const char * a = (const char *) sections[i].Name; 
 		std::string name (a);
@@ -96,18 +263,6 @@ std::map <uint64_t, section> PEparser::getPESections ()
 	}
 	return toRet;
 }
-void * PEparser::getPEstructure ()
-{
-	IMAGE_DOS_HEADER * dosHeader = new IMAGE_DOS_HEADER;
-	if (!ReadProcessMemory (processHandle, (LPCVOID) baseAddress, (uint8_t *) dosHeader, sizeof (IMAGE_DOS_HEADER), NULL))
-	{
-		log ("Cannot read DOS header of this executable\n", logType::ERR, stdoutHandle);
-		throw std::exception ();
-	}
-	void * PEaddr = (void *)((uint64_t )baseAddress + (uint64_t) dosHeader->e_lfanew);
-	delete dosHeader;
-	return PEaddr;
-}
 bool PEparser::isAddrInSection (uint64_t addr, IMAGE_SECTION_HEADER * section)
 {
 	if (addr >= section->VirtualAddress + (uint64_t) baseAddress && addr < section->VirtualAddress + section->Misc.VirtualSize + (uint64_t) baseAddress)
@@ -116,15 +271,14 @@ bool PEparser::isAddrInSection (uint64_t addr, IMAGE_SECTION_HEADER * section)
 	}
 	return false;
 }
-IMAGE_SECTION_HEADER * PEparser::getEntryPointSection ()
+IMAGE_SECTION_HEADER PEparser::getEntryPointSection ()
 {
-	int nSections;
-	IMAGE_SECTION_HEADER * sections = getSections (&nSections);
-	for (int i = 0; i < nSections; i++)
+	std::vector<IMAGE_SECTION_HEADER> sections = (virtualMode == 1 ? getSectionsVirtual () : getSectionsFile ());
+	for (int i = 0; i < sections.size(); i++)
 	{
 		if (isAddrInSection((uint64_t) entryPoint, &sections[i]))
 		{
-			return &sections[i];
+			return sections[i];
 		}
 	}
 	log ("Cannot get section within entrypoint, something very nasty \n", logType::ERR, stdoutHandle);
@@ -143,11 +297,29 @@ void * PEparser::getEntryPoint ()
 }
 void PEparser::showSections ()
 {
-	int nSections;
-	IMAGE_SECTION_HEADER * sections = getSections (&nSections);
-	for (int i = 0 ; i < nSections; i++)
+	std::vector<IMAGE_SECTION_HEADER> sections = (virtualMode == 1 ? getSectionsVirtual () : getSectionsFile ());
+	for (int i = 0 ; i < sections.size(); i++)
 	{
 		printf ("%s --> %.16llx VIRT[%.16llx] RAW[%.16llx]\n", sections[i].Name, sections[i].VirtualAddress + (uint64_t) baseAddress, sections[i].Misc.VirtualSize, sections[i].SizeOfRawData);
 	}
-	delete sections;
+}
+std::vector <COFFentry> PEparser::getCoffEntries ()
+{
+	if (virtualMode)
+	{
+		log ("You cannot read COFF symbols table within virtual memory\n", logType::ERR, stdoutHandle);
+		throw std::exception();
+	}
+	fseek (f,getCoffSymbolTableOffset(),0);
+	uint32_t quantinity = getCoffSymbolNumber();
+	COFFentry * entires = new COFFentry [quantinity];
+	if (fread(entires, sizeof (COFFentry), quantinity, f) != quantinity)
+	{
+		log ("Couldnt read COFF symbol table from file\n", logType::ERR, stdoutHandle);
+		throw std::exception();
+	}
+
+	std::vector <COFFentry> toRet (entires, entires + quantinity);
+	delete entires;
+	return toRet;
 }

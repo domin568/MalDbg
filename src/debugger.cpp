@@ -634,22 +634,42 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
         }
     }
 }
+void debugger::parseSymbols (std::string filePath) // parse COFF symbols from PE reading it from disk
+{
+    PEparser parser (filePath);
+    uint32_t coffTableOffset = parser.getCoffSymbolTableOffset ();
+    uint32_t coffSymbolNumber = parser.getCoffSymbolNumber ();
+    printf ("offset %.08x quantinity %i\n", coffTableOffset, coffSymbolNumber);
+    if (coffSymbolNumber > 0 && coffTableOffset != 0)
+    {
+        log ("Found %i COFF symbols, parsing them\n",logType::INFO, stdoutHandle, coffSymbolNumber);
+
+        coffSymbolParser symbolParser;
+        //std::vector <COFFentry> entries = parser.getCoffEntries();
+        //symbolParser.parseSymbols (parser.getCoffEntries ());
+    }
+}
 DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive) // returns dwContinueStatus 
 {
     switch (event->dwDebugEventCode)
     {
         case CREATE_PROCESS_DEBUG_EVENT:
         {
-            char * modulePath = (char *) malloc (MAX_PATH + 1);
+            char * modulePath = new char [MAX_PATH + 1];
             CREATE_PROCESS_DEBUG_INFO * info = &event->u.CreateProcessInfo;
             GetFinalPathNameByHandleA () (info->hFile,modulePath,MAX_PATH+1,0);
             char * moduleName = PathFindFileNameA(modulePath + 4);
             log ("%s loaded, base 0x%.16llx entrypoint 0x%.16llx\n",logType::INFO, stdoutHandle, moduleName, info->lpBaseOfImage, info->lpStartAddress);
             debuggedProcessBaseAddress = (uint64_t) info->lpBaseOfImage;
             checkWOW64 ();
-            free (modulePath);
+
+            std::string moduleNameString ( (const char *) modulePath);
+            parseSymbols (moduleNameString);
+
             breakpointEntryPoint (info);
+
             currentMemoryMap = new memoryMap (debuggedProcessHandle, wow64);
+            delete modulePath;
             return DBG_CONTINUE;
         }
         case EXIT_PROCESS_DEBUG_EVENT:

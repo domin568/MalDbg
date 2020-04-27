@@ -16,6 +16,7 @@
 #include "memory.h"
 #include "utils.h"
 #include "peParser.h"
+#include "symbolParse.h"
 
 struct exceptionData
 {
@@ -52,6 +53,7 @@ class debugger
         bool deleteBreakpointByAddress (void *);
         bool deleteBreakpointByIndex (uint64_t);
         void setRegisterWithValue (std::string, uint64_t);
+        void parseSymbols (std::string);
         
 
 

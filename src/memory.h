@@ -47,6 +47,7 @@ struct memoryRegion
 
 struct baseRegion // e.g. all memory regions that belongs to specific module
 {
+	bool isIMG = false;
 	std::string name = "";
 	uint64_t base;
 	std::vector <memoryRegion> memRegions;

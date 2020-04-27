@@ -2,10 +2,7 @@
 
 void printfColor (const char * format, DWORD color, HANDLE stdoutHandle, ...)
 {
-    CONSOLE_SCREEN_BUFFER_INFO consoleInfo;
-    WORD savedAttributes;
-    GetConsoleScreenBufferInfo(stdoutHandle, &consoleInfo);
-    savedAttributes = consoleInfo.wAttributes;
+    WORD savedAttributes = getCurrentPromptColor (stdoutHandle);
     SetConsoleTextAttribute(stdoutHandle, color);
     va_list args;
     va_start(args, stdoutHandle);
@@ -13,13 +10,15 @@ void printfColor (const char * format, DWORD color, HANDLE stdoutHandle, ...)
     va_end (args);
     SetConsoleTextAttribute(stdoutHandle, savedAttributes);
 }
+DWORD getCurrentPromptColor (HANDLE stdoutHandle)
+{
+    CONSOLE_SCREEN_BUFFER_INFO consoleInfo;
+    GetConsoleScreenBufferInfo(stdoutHandle, &consoleInfo);
+    return consoleInfo.wAttributes;
+}
 void log (const char * messageFormatted, logType type, HANDLE stdoutHandle, ...)
 {   
-    CONSOLE_SCREEN_BUFFER_INFO consoleInfo;
-    WORD savedAttributes;
-    GetConsoleScreenBufferInfo(stdoutHandle, &consoleInfo);
-    savedAttributes = consoleInfo.wAttributes;
-
+    WORD savedAttributes = getCurrentPromptColor (stdoutHandle);
     SetConsoleTextAttribute(stdoutHandle, type);
     switch (type)
     {
@@ -240,8 +239,16 @@ void printHelp ()
     puts ("set register, sr <register name> <hex value> - sets specified register with given value\n");
     puts ("write memory, wm <hex address> <size_decimal> <hex value>\n");
 }
-void centerText(const char *text, int fieldWidth) 
+void centerText (const char *text, int fieldWidth) 
 {
     int padLen = (fieldWidth - strlen(text)) / 2;
     printf("%*s%s%*s", padLen, " ", text, (strlen(text) % 2 == 1 ? padLen + 1 : padLen), " ");
+}
+void centerTextColor (const char *text, int fieldWidth, DWORD color, HANDLE stdoutHandle) 
+{
+    WORD savedAttributes = getCurrentPromptColor (stdoutHandle);
+    SetConsoleTextAttribute(stdoutHandle, color);
+    int padLen = (fieldWidth - strlen(text)) / 2;
+    printf("%*s%s%*s", padLen, " ", text, (strlen(text) % 2 == 1 ? padLen + 1 : padLen), " ");
+    SetConsoleTextAttribute(stdoutHandle, savedAttributes);
 } 

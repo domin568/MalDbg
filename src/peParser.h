@@ -3,6 +3,8 @@
 #include <windows.h>
 #include "utils.h"
 #include "peb.h"
+#include <vector>
+#include "symbolParse.h"
 
 struct section
 {
@@ -16,6 +18,7 @@ class PEparser
 	private:
 	void * baseAddress;
 	void * entryPoint;
+	void * PEheaderAddr;
 
 	HANDLE stdoutHandle;
 	HANDLE processHandle;
@@ -24,19 +27,36 @@ class PEparser
 
 	int wow64 = false;
 	int nSections;
+	bool virtualMode = false;
 
-	void * getPEstructure ();
-	void * PEheaderAddr;
+	FILE * f;
+
+	void * getPEstructureVirtual ();
+	uint32_t getPEstructureFile ();
 	
-	IMAGE_SECTION_HEADER * getSections (int *);
-	void readPEheader ();
-	void checkArch ();
+	void checkArchVirtual ();
+	void checkArchFile ();
+
+	void readPEheaderVirtual ();
+	void readPEheaderFile ();
+
+	std::vector<IMAGE_SECTION_HEADER> getSectionsVirtual ();
+	std::vector<IMAGE_SECTION_HEADER> getSectionsFile ();
+	
 	bool isAddrInSection (uint64_t, IMAGE_SECTION_HEADER *);
-	IMAGE_SECTION_HEADER * getEntryPointSection ();
+	IMAGE_SECTION_HEADER getEntryPointSection ();
 	
 	public:
-	PEparser (HANDLE, uint64_t);
+	PEparser (HANDLE, uint64_t); // in virtual memory
+	PEparser (std::string); // exe file
+
+	void * getEntryPoint (); // OK
+	uint64_t getCoffSymbolTableOffset (); // OK
+	uint32_t getCoffSymbolNumber (); // OK
+	std::vector <COFFentry> getCoffEntries ();
+	uint32_t getNumberOfSections (); // ok
+
 	void showSections ();
-	void * getEntryPoint ();
 	std::map <uint64_t, section> getPESections ();
+	uint64_t fileOffsetToVirtualAddress (uint64_t); 
 };

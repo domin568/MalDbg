@@ -126,6 +126,10 @@ void memoryMap::updateMemoryMap ()
 			{
 				baseRegion newBaseRegion;
 				newBaseRegion.base = (uint64_t) mbi.AllocationBase;
+				if (mbi.Type == MEM_IMAGE)
+				{
+					newBaseRegion.isIMG = true;
+				}
 				baseRegions.push_back (newBaseRegion);
 			}
 			memoryRegion newMemoryRegion;
@@ -182,12 +186,30 @@ void memoryMap::showMemoryMap ()
 	printf ("-------------------------------------------------------------------------------\n");
 	for (auto & i : baseRegions)
 	{
-		//printf ("Base %.16llx \n", i.base);
-		for (auto & j : i.memRegions)
+		for (int j = 0; j < i.memRegions.size(); j++)
 		{
-			printf ("|%.16llx|%.16llx|", j.start, j.size);
-			centerText (j.name.c_str() ,20);
-			printf ("|%.8s|  %.3s | %.5s|\n", j.state.c_str(), j.type.c_str(), j.protection.toString().c_str());
+			DWORD currentColor = getCurrentPromptColor (stdoutHandle);
+			if (i.isIMG && j == 0)
+			{
+				currentColor = logType::WARNING;
+			}
+			else if (i.isIMG && j > 0)
+			{
+				currentColor = logType::INFO;
+			}
+			printfColor ("|%.16llx|%.16llx|", currentColor, stdoutHandle, i.memRegions[j].start, i.memRegions[j].size);
+			centerTextColor (i.memRegions[j].name.c_str(), 20, currentColor, stdoutHandle);
+			printfColor ("|%.8s|  %.3s ", currentColor, stdoutHandle, i.memRegions[j].state.c_str(),
+			              i.memRegions[j].type.c_str());
+			if (!strncmp (i.memRegions[j].protection.toString().c_str(), "RWX", 3))
+			{
+				currentColor = logType::ERR;
+			}
+			printfColor ("|%.5s|\n", currentColor, stdoutHandle, i.memRegions[j].protection.toString().c_str());
+			
+			//printf ("|%.16llx|%.16llx|", i.memRegions[j].start, i.memRegions[j].size);
+			//centerText (j.name.c_str() ,20);
+			//printf ("|%.8s|  %.3s | %.5s|\n", i.memRegions[j].state.c_str(), i.memRegions[j].type.c_str(), i.memRegions[j].protection.toString().c_str());
 		}
 	}
 	printf ("-------------------------------------------------------------------------------\n");
