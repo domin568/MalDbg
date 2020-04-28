@@ -252,3 +252,12 @@ void centerTextColor (const char *text, int fieldWidth, DWORD color, HANDLE stdo
     printf("%*s%s%*s", padLen, " ", text, (strlen(text) % 2 == 1 ? padLen + 1 : padLen), " ");
     SetConsoleTextAttribute(stdoutHandle, savedAttributes);
 } 
+uint64_t alignMemoryPageSize (uint64_t size)
+{
+    if (size & 0xfff)
+    {
+        size += 0x1000;
+        size &= 0xfffffffffffff000;
+    }
+    return size;
+}

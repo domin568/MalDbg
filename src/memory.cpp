@@ -109,7 +109,6 @@ void memoryMap::updateMemoryMap ()
 	uint64_t lastAllocationBase = 0;
 
 	std::vector <moduleData> modules = getModulesLoaded ();
-
 	for (auto & module : modules)
 	{
 		PEparser parser (processHandle, module.VAaddress);
@@ -159,6 +158,7 @@ void memoryMap::updateMemoryMap ()
 				std::wstring wName ( module.name, (module.nameSize <= 40 ? module.nameSize / 2 : 20));
 				std::string sName ( wName.begin(), wName.end() );
 				header.name = sName; // PWSTR to std::string
+				baseRegion.name = sName;
 				regions.push_back (header);
 
 				for ( auto & [key, val] : module.sections )
@@ -311,7 +311,6 @@ std::vector <moduleData> memoryMap::getModulesLoaded ()
 {
     void * PEBaddr = getPEBaddr ();
     std::vector <moduleData> modules;
-
     if (wow64)
     {
         // to test 
@@ -324,6 +323,7 @@ std::vector <moduleData> memoryMap::getModulesLoaded ()
             log ("Cannot read PEB64 of process \n", logType::ERR, stdoutHandle);
             throw std::exception ();
         }
+
         PEB_LDR_DATA ldr;
         if (!ReadProcessMemory (processHandle, (LPVOID) peb.Ldr, &ldr, sizeof (PEB_LDR_DATA), NULL))
         {
@@ -374,6 +374,34 @@ std::vector <moduleData> memoryMap::getModulesLoaded ()
         }
     }
     return modules;
+}
+std::string memoryMap::getSectionNameForAddress (uint64_t addr)
+{
+	for (const auto & i : baseRegions)
+	{
+		for (const auto & j : i.memRegions)
+		{
+			if (addr >= j.start && addr < j.start + j.size)
+			{
+				return j.name;
+			}
+		}
+	}
+	return "?";
+}
+std::string memoryMap::getImageNameForAddress (uint64_t addr)
+{
+	for (const auto & i : baseRegions)
+	{
+		for (const auto & j : i.memRegions)
+		{
+			if (addr >= j.start && addr < j.start + j.size)
+			{
+				return i.name;
+			}
+		}
+	}
+	return "?";
 }
 
 // ******************************************************************************************************************************************

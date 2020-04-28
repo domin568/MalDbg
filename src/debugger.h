@@ -11,12 +11,14 @@
 #include <vector>
 #include <capstone/capstone.h>
 #include <map>
+#include <memory>
 
 #include "breakpoint.h"
 #include "memory.h"
 #include "utils.h"
 #include "peParser.h"
 #include "symbolParse.h"
+#include "structs.h"
 
 struct exceptionData
 {
@@ -33,8 +35,9 @@ class debugger
 
         void checkWOW64 ();
         DWORD run (std::string);
-        DWORD processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive);
-        DWORD processExceptions (DEBUG_EVENT * event);
+        DWORD processDebugEvents (DEBUG_EVENT *, bool *);
+        DWORD processExceptions (DEBUG_EVENT*);
+        DWORD processCreateProcess (DEBUG_EVENT *);
         void handleBreakpoint (EXCEPTION_DEBUG_INFO * exception);
         void handleSingleStep (EXCEPTION_DEBUG_INFO * exception);
         void breakpointEntryPoint (CREATE_PROCESS_DEBUG_INFO * info);
@@ -53,9 +56,8 @@ class debugger
         bool deleteBreakpointByAddress (void *);
         bool deleteBreakpointByIndex (uint64_t);
         void setRegisterWithValue (std::string, uint64_t);
-        void parseSymbols (std::string);
+        bool parseSymbols (std::string);
         
-
 
         CONTEXT * currentContext; // shared resource, never used in paralel
         memoryMap * currentMemoryMap;
@@ -65,7 +67,6 @@ class debugger
         int32_t wow64;
 
     	std::string fileName;
-
 
     	STARTUPINFO si;
     	PROCESS_INFORMATION pi;
@@ -86,6 +87,7 @@ class debugger
         std::vector <memoryRegion> memoryRegions;
         std::set <DWORD> interruptingEvents;
         std::set <DWORD> interruptingExceptions;
+        std::map <uint64_t, symbol> COFFfunctionNames;
 
 
     	DEBUG_EVENT currentDebugEvent;

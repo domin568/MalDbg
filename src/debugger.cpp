@@ -566,13 +566,20 @@ void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception)
 {
     uint64_t breakpointAddress = (uint64_t) exception->ExceptionRecord.ExceptionAddress;
     breakpoint * bp = searchForBreakpoint ( (void *) breakpointAddress);
+
+    // TODOOOOOOOOOOOOOO HANDLE ni TO NOT OVERHEAT PROCESSOR hahahaha
+
+    currentMemoryMap->updateMemoryMap ();
+    std::string sectionName = currentMemoryMap->getSectionNameForAddress (breakpointAddress);
+    std::string moduleName = currentMemoryMap->getImageNameForAddress(breakpointAddress);
+
     if (bp && bp->getType() == breakpointType::SOFTWARE_TYPE) // user breakpoint
     {
         bp->incrementHitCount ();
-        log ("User software breakpoint reached at 0x%.16llx\n",logType::INFO, stdoutHandle, breakpointAddress);
+        log ("User software breakpoint reached at 0x%.16llx <%s->%s>\n",logType::INFO, stdoutHandle, breakpointAddress, moduleName.c_str(), sectionName.c_str());
         if (!bp->restore(debuggedProcessHandle))// restore original byte to continue execution
         {
-            log ("Cannot restore breakpoint at 0x%.16llx\n",logType::INFO, stdoutHandle, breakpointAddress);   
+            log ("Cannot restore breakpoint at 0x%.16llx <%s->%s>\n",logType::INFO, stdoutHandle, breakpointAddress, moduleName.c_str(), sectionName.c_str());   
         }
         bp->getIsOneHit() == 0 ? currentContext->EFlags |= 0x100 : currentContext->EFlags &= ~0x100;
         bp->getIsOneHit() == 0 ? lastException.oneHitBreakpoint = 0 : lastException.oneHitBreakpoint = 1;
@@ -583,8 +590,33 @@ void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception)
     }
     else // system breakpoint
     {
-        log ("System breakpoint reached at 0x%.16llx\n", logType::INFO, stdoutHandle,  breakpointAddress);
+        log ("System breakpoint reached at 0x%.16llx <%s->%s>\n", logType::INFO, stdoutHandle, breakpointAddress, moduleName.c_str(), sectionName.c_str());
     }    
+}
+DWORD debugger::processCreateProcess (DEBUG_EVENT * event)
+{
+    CREATE_PROCESS_DEBUG_INFO * info = &event->u.CreateProcessInfo;
+    char * modulePath = new char [MAX_PATH + 1];
+    GetFinalPathNameByHandleA () (info->hFile,modulePath,MAX_PATH+1,0);
+    std::string moduleNameString ( (const char *) modulePath);
+    char * moduleName = PathFindFileNameA(modulePath + 4);
+
+    debuggedProcessBaseAddress = (uint64_t) info->lpBaseOfImage;
+    checkWOW64 ();
+    currentMemoryMap = new memoryMap (debuggedProcessHandle, wow64);
+    
+    if (!parseSymbols (moduleNameString))
+    {
+        // parse IAT names
+    }
+    PEparser parser (moduleNameString);
+    std::string entrypointSectionName = parser.getSectionNameForAddress ((uint64_t)info->lpStartAddress - (uint64_t)info->lpBaseOfImage); 
+    log ("%s loaded, base 0x%.16llx entrypoint 0x%.16llx <%.8s>\n",logType::INFO, stdoutHandle, moduleName, info->lpBaseOfImage, info->lpStartAddress, entrypointSectionName.c_str());
+
+    breakpointEntryPoint (info);
+
+    delete modulePath;
+    return DBG_CONTINUE;
 }
 DWORD debugger::processExceptions (DEBUG_EVENT * event)
 {
@@ -634,20 +666,32 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
         }
     }
 }
-void debugger::parseSymbols (std::string filePath) // parse COFF symbols from PE reading it from disk
+bool debugger::parseSymbols (std::string filePath) // parse COFF symbols from PE reading it from disk
 {
     PEparser parser (filePath);
     uint32_t coffTableOffset = parser.getCoffSymbolTableOffset ();
     uint32_t coffSymbolNumber = parser.getCoffSymbolNumber ();
-    printf ("offset %.08x quantinity %i\n", coffTableOffset, coffSymbolNumber);
     if (coffSymbolNumber > 0 && coffTableOffset != 0)
     {
         log ("Found %i COFF symbols, parsing them\n",logType::INFO, stdoutHandle, coffSymbolNumber);
 
         coffSymbolParser symbolParser;
-        //std::vector <COFFentry> entries = parser.getCoffEntries();
-        //symbolParser.parseSymbols (parser.getCoffEntries ());
+        std::vector <COFFentry> entries = parser.getCoffEntries();
+        auto extendedNames = parser.getCoffExtendedNames();
+        uint64_t coffExtendedNamesOffset = parser.getCoffExtendedNamesOffset();
+        COFFfunctionNames = symbolParser.parseSymbols (parser.getCoffEntries (), extendedNames, coffExtendedNamesOffset, parser);
+        FILE * fw = fopen ("functions.txt", "wb");
+        /*
+        for ( auto const& [key, val] : COFFfunctionNames )
+        {
+            //fprintf (fw, "%i %.16llx --> %s\n", val.type, key, val.name.c_str());
+            //printf ("%.16llx --> %s\n",key, val.c_str());
+        }
+        */
+        fclose (fw);
+        return true;
     }
+    return false;
 }
 DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive) // returns dwContinueStatus 
 {
@@ -655,22 +699,7 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
     {
         case CREATE_PROCESS_DEBUG_EVENT:
         {
-            char * modulePath = new char [MAX_PATH + 1];
-            CREATE_PROCESS_DEBUG_INFO * info = &event->u.CreateProcessInfo;
-            GetFinalPathNameByHandleA () (info->hFile,modulePath,MAX_PATH+1,0);
-            char * moduleName = PathFindFileNameA(modulePath + 4);
-            log ("%s loaded, base 0x%.16llx entrypoint 0x%.16llx\n",logType::INFO, stdoutHandle, moduleName, info->lpBaseOfImage, info->lpStartAddress);
-            debuggedProcessBaseAddress = (uint64_t) info->lpBaseOfImage;
-            checkWOW64 ();
-
-            std::string moduleNameString ( (const char *) modulePath);
-            parseSymbols (moduleNameString);
-
-            breakpointEntryPoint (info);
-
-            currentMemoryMap = new memoryMap (debuggedProcessHandle, wow64);
-            delete modulePath;
-            return DBG_CONTINUE;
+            return processCreateProcess (event);
         }
         case EXIT_PROCESS_DEBUG_EVENT:
         {
@@ -715,7 +744,6 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
         case EXCEPTION_DEBUG_EVENT:
         {
             return processExceptions (event);
-            break;
         }
         default:
         {

@@ -4,7 +4,7 @@
 #include <inttypes.h>
 #include <vector>
 #include "utils.h"
-#include "peb.h"
+#include "structs.h"
 #include "peParser.h"
 
 typedef struct _PROCESS_BASIC_INFORMATION 
@@ -70,8 +70,10 @@ class memoryMap
 		void * getPEBaddr ();
 		void updateMemoryMap ();
 		void showMemoryMap ();
-		memoryProtection protectionForAddr (uint64_t addr);
 		void setProtection (uint64_t, uint64_t, memoryProtection);
+		std::string getSectionNameForAddress (uint64_t);
+		std::string getImageNameForAddress (uint64_t);
+		memoryProtection protectionForAddr (uint64_t addr);
 
 };
 

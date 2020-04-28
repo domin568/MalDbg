@@ -1,10 +1,12 @@
 #pragma once
 
 #include <windows.h>
-#include "utils.h"
-#include "peb.h"
 #include <vector>
-#include "symbolParse.h"
+#include <map>
+#include <memory>
+
+#include "utils.h"
+#include "structs.h"
 
 struct section
 {
@@ -28,6 +30,7 @@ class PEparser
 	int wow64 = false;
 	int nSections;
 	bool virtualMode = false;
+	uint64_t sectionsHeadersOffset;
 
 	FILE * f;
 
@@ -50,11 +53,16 @@ class PEparser
 	PEparser (HANDLE, uint64_t); // in virtual memory
 	PEparser (std::string); // exe file
 
-	void * getEntryPoint (); // OK
-	uint64_t getCoffSymbolTableOffset (); // OK
-	uint32_t getCoffSymbolNumber (); // OK
+	void * getEntryPoint (); 
+	uint64_t getCoffSymbolTableOffset (); 
+	uint32_t getCoffSymbolNumber (); 
+	uint64_t getCoffExtendedNamesOffset ();
 	std::vector <COFFentry> getCoffEntries ();
-	uint32_t getNumberOfSections (); // ok
+	std::unique_ptr<uint8_t []> getCoffExtendedNames ();
+	uint64_t getSectionAddressForIndex (int);
+	uint32_t getNumberOfSections ();
+
+	std::string getSectionNameForAddress (uint64_t); 
 
 	void showSections ();
 	std::map <uint64_t, section> getPESections ();

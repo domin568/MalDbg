@@ -32,6 +32,7 @@ PEparser::PEparser (std::string exePath) // ON DISK
 
 uint32_t PEparser::getPEstructureFile ()
 {
+	fseek (f, 0, 0);
 	IMAGE_DOS_HEADER * dosHeader = new IMAGE_DOS_HEADER;
 	size_t ret = fread (dosHeader, sizeof (IMAGE_DOS_HEADER), 1, f);
 	if (ret != 1) // one element of IMAGE_DOS_HEADER
@@ -121,8 +122,9 @@ void  PEparser::readPEheaderVirtual ()
 		throw std::exception ();
 	}
 }
-void  PEparser::readPEheaderFile ()
+void PEparser::readPEheaderFile ()
 {
+	fseek (f, (uint64_t) PEheaderAddr, 0);
 	uint32_t size = (wow64 == 0 ? sizeof(IMAGE_NT_HEADERS64) : sizeof (IMAGE_NT_HEADERS32));
 	if (fread (ntHeaders, 1, size, f) != size)
 	{
@@ -137,7 +139,7 @@ void  PEparser::readPEheaderFile ()
 	{
 		baseAddress = (void *) ((IMAGE_NT_HEADERS64*) ntHeaders)->OptionalHeader.ImageBase;
 	}
-	
+	sectionsHeadersOffset = ftell (f);
 }
 
 /* END READ PE HEADER */
@@ -156,7 +158,7 @@ std::vector<IMAGE_SECTION_HEADER> PEparser::getSectionsVirtual ()
 	{
 		if (!ReadProcessMemory (processHandle, (LPCVOID) sectionsStartAddr + (sizeof(IMAGE_SECTION_HEADER) * i), &sections[i], sizeof (IMAGE_SECTION_HEADER), NULL))
 		{
-			log ("Cannot read section from PE file\n", logType::ERR, stdoutHandle);
+			log ("Cannot read section from PE module\n", logType::ERR, stdoutHandle);
 			throw std::exception ();
 		}	
 	}
@@ -167,15 +169,16 @@ std::vector<IMAGE_SECTION_HEADER> PEparser::getSectionsVirtual ()
 
 std::vector<IMAGE_SECTION_HEADER> PEparser::getSectionsFile ()
 {
+	fseek (f, sectionsHeadersOffset, 0);
 	std::vector <IMAGE_SECTION_HEADER> toRet;
 
 	uint32_t size = (wow64 == 0 ? sizeof(IMAGE_NT_HEADERS64) : sizeof(IMAGE_NT_HEADERS32));
 	WORD numberOfSections = getNumberOfSections();
-	uint64_t sectionsStartAddr =  (uint64_t) PEheaderAddr + size;
+	uint64_t sectionsStartAddr = (uint64_t) PEheaderAddr + size;
 
 	IMAGE_SECTION_HEADER * sections = new IMAGE_SECTION_HEADER [numberOfSections];
 
-	if (fread (sections, sizeof (IMAGE_SECTION_HEADER), numberOfSections , f) != numberOfSections)
+	if (fread (sections, sizeof (IMAGE_SECTION_HEADER), numberOfSections, f) != numberOfSections)
 	{
 		log ("Cannot read section headers from PE file\n", logType::ERR, stdoutHandle);
 		throw std::exception ();	
@@ -246,17 +249,14 @@ std::map <uint64_t, section> PEparser::getPESections ()
 	std::vector<IMAGE_SECTION_HEADER> sections = (virtualMode == 1 ? getSectionsVirtual () : getSectionsFile ());
 	for (int i = 0 ; i < sections.size(); i++)
 	{
+		//printf ("%i ----> %s",i, sections[i].Name);
 		const char * a = (const char *) sections[i].Name; 
 		std::string name (a);
 		section s;
 		s.address = sections[i].VirtualAddress + (uint64_t) baseAddress;
 
-		s.size = sections[i].Misc.VirtualSize;
-		if (s.size & 0xfff)
-		{
-			s.size += 0x1000;
-			s.size &= 0xfffffffffffff000;
-		}
+		s.size = alignMemoryPageSize(sections[i].Misc.VirtualSize);
+
 		s.name = name;
 
 		toRet[sections[i].VirtualAddress + (uint64_t) baseAddress] = s;
@@ -322,4 +322,49 @@ std::vector <COFFentry> PEparser::getCoffEntries ()
 	std::vector <COFFentry> toRet (entires, entires + quantinity);
 	delete entires;
 	return toRet;
+}
+uint64_t PEparser::getCoffExtendedNamesOffset ()
+{
+	uint64_t symbolsOffset = getCoffSymbolTableOffset();
+	uint64_t symbolsSize = sizeof (COFFentry) * getCoffSymbolNumber ();
+	return symbolsOffset + symbolsSize;
+}
+std::unique_ptr<uint8_t []> PEparser::getCoffExtendedNames ()
+{
+	uint64_t extendedNamesOffset = getCoffExtendedNamesOffset ();
+	fseek (f, 0 , 2);
+	uint64_t imageSize = ftell (f);
+	fseek (f, extendedNamesOffset, 0);
+	uint64_t toRead = imageSize - extendedNamesOffset; // we suppose that extended strings are rest of PE file
+
+	auto extendedNamesBuff =std::make_unique<uint8_t []>(toRead); 
+	if (fread (extendedNamesBuff.get(), 1, toRead, f) != toRead)
+	{
+		log ("Couldnt read COFF extended symbol names from file\n", logType::ERR, stdoutHandle);
+		throw std::exception();
+	}
+	return extendedNamesBuff;
+}
+uint64_t PEparser::getSectionAddressForIndex (int idx)
+{
+	std::vector<IMAGE_SECTION_HEADER> sections = (virtualMode == 1 ? getSectionsVirtual() : getSectionsFile () );
+	if (idx < 0 && idx >= sections.size())
+	{
+		log ("Couldnt get section nr %i\n", logType::ERR, stdoutHandle, idx);
+		throw std::exception();
+	}
+	return sections[idx].VirtualAddress;
+}
+std::string PEparser::getSectionNameForAddress (uint64_t addr) // RVA for file, VA for module
+{
+	std::vector<IMAGE_SECTION_HEADER> sections = (virtualMode == 1 ? getSectionsVirtual() : getSectionsFile());
+	for (int i = 0 ; i < sections.size() ; i++)
+	{
+		if (addr >= sections[i].VirtualAddress && addr < sections[i].VirtualAddress + alignMemoryPageSize(sections[i].Misc.VirtualSize))
+		{
+			uint32_t nameSize = strlen ((const char *)sections[i].Name);
+			return std::string ( (const char *) sections[i].Name, (nameSize > 8 ? 8 : nameSize) );
+		}
+	}
+	return "?";
 }

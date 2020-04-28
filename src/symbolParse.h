@@ -1,30 +1,25 @@
 #pragma once
-#pragma pack(push)
-#pragma pack(1)
+
+#include <vector>
+#include <memory>
 
 #include <windows.h>
 #include "utils.h"
-#include <vector>
+#include "peParser.h"
+#include "structs.h"
 
-typedef struct 
+enum symbolType
 {
-  union 
-  {
-    char e_name[8];
-    struct 
-    {
-      unsigned long e_zeroes;
-      unsigned long e_offset;
-    } e;
-  } e;
-  unsigned long e_value;
-  short e_scnum;
-  unsigned short e_type;
-  unsigned char e_sclass;
-  unsigned char e_numaux;
-} COFFentry;
+    FUNCTION_NAME = 0,
+    NAME = 1
+};
 
-#pragma pack(pop)
+struct symbol
+{
+	std::string name;
+	int sectionNumber;
+	symbolType type;
+};
 
 class coffSymbolParser 
 {
@@ -33,5 +28,5 @@ class coffSymbolParser
 		HANDLE stdoutHandle;
 	public:
 		coffSymbolParser ();
-		void parseSymbols (std::vector <COFFentry>);
+		std::map <uint64_t, symbol> parseSymbols (std::vector <COFFentry>, std::unique_ptr<uint8_t []> &, uint64_t, PEparser &);
 };
