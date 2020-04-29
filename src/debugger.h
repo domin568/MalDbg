@@ -37,8 +37,8 @@ class debugger
         DWORD processDebugEvents (DEBUG_EVENT *, bool *);
         DWORD processExceptions (DEBUG_EVENT*);
         DWORD processCreateProcess (DEBUG_EVENT *);
-        void handleBreakpoint (EXCEPTION_DEBUG_INFO * exception);
-        void handleSingleStep (EXCEPTION_DEBUG_INFO * exception);
+        void handleBreakpoint (EXCEPTION_DEBUG_INFO * exception, std::string, std::string);
+        void handleSingleStep (EXCEPTION_DEBUG_INFO * exception, std::string, std::string);
         void breakpointEntryPoint (CREATE_PROCESS_DEBUG_INFO * info);
         void placeSoftwareBreakpoint (void *, bool);
         void interactiveCommands ();

@@ -489,7 +489,7 @@ debugger::debugger (std::string fileName)
     this->fileName = fileName;
     debuggerThread = std::thread(debugger::run, this, fileName);
 }
-void debugger::handleSingleStep (EXCEPTION_DEBUG_INFO * exception)
+void debugger::handleSingleStep (EXCEPTION_DEBUG_INFO * exception, std::string sectionName, std::string moduleName)
 {
     uint64_t breakpointAddress = (uint64_t) exception->ExceptionRecord.ExceptionAddress;
     breakpoint * bp = searchForBreakpoint (breakpoints, (void *) lastException.rip);
@@ -506,21 +506,15 @@ void debugger::handleSingleStep (EXCEPTION_DEBUG_INFO * exception)
     else
     {
         lastException.oneHitBreakpoint = true;
-        log ("User single step reached at 0x%.16llx\n",logType::INFO, stdoutHandle, breakpointAddress);
+        log ("User single step reached at 0x%.16llx <%s->%s>\n",logType::INFO, stdoutHandle, breakpointAddress, moduleName.c_str(), sectionName.c_str());
     }
     lastException.exceptionType = (DWORD) exception->ExceptionRecord.ExceptionCode;
     lastException.rip = breakpointAddress;
 }
-void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception)
+void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception, std::string sectionName, std::string moduleName)
 {
     uint64_t breakpointAddress = (uint64_t) exception->ExceptionRecord.ExceptionAddress;
     breakpoint * bp = searchForBreakpoint (breakpoints, (void *) breakpointAddress);
-
-    // TODOOOOOOOOOOOOOO HANDLE ni TO NOT OVERHEAT PROCESSOR hahahaha
-
-    currentMemoryMap->updateMemoryMap ();
-    std::string sectionName = currentMemoryMap->getSectionNameForAddress (breakpointAddress);
-    std::string moduleName = currentMemoryMap->getImageNameForAddress(breakpointAddress);
 
     if (bp && bp->getType() == breakpointType::SOFTWARE_TYPE) // user breakpoint
     {
@@ -574,43 +568,64 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
     {
         if (exception->dwFirstChance)
         {
-            log ("First chance exception: ", logType::ERR, stdoutHandle);
+            log ("First chance ", logType::ERR, stdoutHandle);
         }
         else if (!exception->dwFirstChance)
         {
-            log ("Last chance exception: ", logType::ERR, stdoutHandle);
+            log ("Last chance ", logType::ERR, stdoutHandle);
         }   
     }
+    currentMemoryMap->updateMemoryMap ();
+    std::string sectionName = currentMemoryMap->getSectionNameForAddress ((uint64_t) exception->ExceptionRecord.ExceptionAddress);
+    std::string moduleName = currentMemoryMap->getImageNameForAddress((uint64_t) exception->ExceptionRecord.ExceptionAddress);
     switch (exception->ExceptionRecord.ExceptionCode)
     {
         case EXCEPTION_ACCESS_VIOLATION:
         {
-            printf ("Access Violation (0x%.08x) at 0x%.16llx\n",exception->ExceptionRecord.ExceptionCode, exception->ExceptionRecord.ExceptionAddress);
+            printf ("Access Violation (0x%.08x) at 0x%.16llx <%s->%s>\n",
+                    exception->ExceptionRecord.ExceptionCode,
+                    exception->ExceptionRecord.ExceptionAddress,
+                    sectionName.c_str(),
+                    moduleName.c_str()
+                    );
             return DBG_EXCEPTION_NOT_HANDLED;
         }
         case EXCEPTION_BREAKPOINT:
         {
-            handleBreakpoint (exception);
+            handleBreakpoint (exception, sectionName, moduleName);
             return DBG_CONTINUE;
         }
         case EXCEPTION_INT_DIVIDE_BY_ZERO:
         {
-            printf ("Division by zero exception at 0x%.16llx\n",exception->ExceptionRecord.ExceptionAddress);
+            printf ("Division by zero exception at 0x%.16llx <%s->%s>\n",
+                    exception->ExceptionRecord.ExceptionAddress,
+                    sectionName.c_str(),
+                    moduleName.c_str()
+                   );
             return DBG_EXCEPTION_NOT_HANDLED;
         }
         case EXCEPTION_PRIV_INSTRUCTION:
         {
-            printf ("Privileged instruction was spotted at 0x%.16llx\n",exception->ExceptionRecord.ExceptionAddress);  
+            printf ("Privileged instruction was spotted at 0x%.16llx <%s->%s>\n",
+                    exception->ExceptionRecord.ExceptionAddress,
+                    sectionName.c_str(),
+                    moduleName.c_str()
+                   );  
             return DBG_EXCEPTION_NOT_HANDLED;
         }
         case EXCEPTION_SINGLE_STEP:
         {
-            handleSingleStep (exception);
+            handleSingleStep (exception, sectionName, moduleName);
             return DBG_CONTINUE;
         }
         default:
         {
-            log ("Not implemented exception yet\n", logType::UNKNOWN_EVENT, stdoutHandle);
+            log ("Not implemented exception yet at 0x%.16llx <%s->%s>\n",
+                 logType::UNKNOWN_EVENT,
+                 stdoutHandle,exception->ExceptionRecord.ExceptionAddress,
+                 sectionName.c_str(),
+                 moduleName.c_str()
+                );
             return DBG_EXCEPTION_NOT_HANDLED;
         }
     }

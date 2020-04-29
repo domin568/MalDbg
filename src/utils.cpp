@@ -242,14 +242,23 @@ void printHelp ()
 void centerText (const char *text, int fieldWidth) 
 {
     int padLen = (fieldWidth - strlen(text)) / 2;
-    printf("%*s%s%*s", padLen, " ", text, (strlen(text) % 2 == 1 ? padLen + 1 : padLen), " ");
+    printf("%*c%s%*c", padLen, " " , text, (strlen(text) % 2 == 1 ? padLen + 1 : padLen), " ");
 }
 void centerTextColor (const char *text, int fieldWidth, DWORD color, HANDLE stdoutHandle) 
 {
     WORD savedAttributes = getCurrentPromptColor (stdoutHandle);
     SetConsoleTextAttribute(stdoutHandle, color);
     int padLen = (fieldWidth - strlen(text)) / 2;
-    printf("%*s%s%*s", padLen, " ", text, (strlen(text) % 2 == 1 ? padLen + 1 : padLen), " ");
+
+    printf ("%.*s %s %.*s",
+    padLen-1,
+    "========================================================",
+    text,
+    (strlen(text) % 2 == 1 ? padLen : padLen - 1),
+    "========================================================"
+    );
+
+    //printf("%*s%s%*s", padLen, a, text, (strlen(text) % 2 == 1 ? padLen + 1 : padLen), a);
     SetConsoleTextAttribute(stdoutHandle, savedAttributes);
 } 
 uint64_t alignMemoryPageSize (uint64_t size)
@@ -260,4 +269,12 @@ uint64_t alignMemoryPageSize (uint64_t size)
         size &= 0xfffffffffffff000;
     }
     return size;
+}
+
+std::string intToHex( uint64_t i )
+{
+  std::stringstream stream;
+  stream << "0x" 
+         << std::hex << i;
+  return stream.str();
 }

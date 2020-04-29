@@ -249,9 +249,9 @@ std::map <uint64_t, section> PEparser::getPESections ()
 	std::vector<IMAGE_SECTION_HEADER> sections = (virtualMode == 1 ? getSectionsVirtual () : getSectionsFile ());
 	for (int i = 0 ; i < sections.size(); i++)
 	{
-		//printf ("%i ----> %s",i, sections[i].Name);
 		const char * a = (const char *) sections[i].Name; 
-		std::string name (a);
+		uint32_t size = strlen (a);
+		std::string name (a, (size > 8 ? 8 : size));
 		section s;
 		s.address = sections[i].VirtualAddress + (uint64_t) baseAddress;
 
