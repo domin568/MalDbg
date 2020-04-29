@@ -47,7 +47,7 @@ include_directories (${CAPSTONE_INC})
 set (CAPSTONE_LIB $<TARGET_FILE:capstone-static> CACHE FILE CapstoneLib)
 
 set (EXECUTABLE_NAME ${PROJECT_NAME})
-set (SOURCE_FILES src/debugger.cpp src/main.cpp src/debugger.h src/breakpoint.h src/breakpoint.cpp src/memory.cpp src/memory.h src/utils.h src/utils.cpp src/peParser.h src/peParser.cpp src/structs.h src/symbolParse.cpp src/symbolParse.h)
+set (SOURCE_FILES src/debugger.cpp src/main.cpp src/breakpoint.cpp src/memory.cpp src/utils.cpp src/peParser.cpp src/symbolParse.cpp src/disassembly.cpp)
 
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CXX_COMPILER_FLAGS}")
 set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${CXX_LINKER_FLAGS}")

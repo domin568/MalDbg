@@ -9,16 +9,15 @@
 #include <queue>
 #include <set>
 #include <vector>
-#include <capstone/capstone.h>
 #include <map>
 #include <memory>
-
 #include "breakpoint.h"
 #include "memory.h"
 #include "utils.h"
 #include "peParser.h"
 #include "symbolParse.h"
 #include "structs.h"
+#include "disassembly.h"
 
 struct exceptionData
 {
@@ -49,7 +48,7 @@ class debugger
         void showContext ();
         void disasmAt (void *, int);
         void checkInterruptEvent ();
-        breakpoint * searchForBreakpoint (void * address);
+        breakpoint * searchForBreakpoint (std::vector<breakpoint> &, void * address);
         void * getNextInstructionAddress (void *);
         void showBreakpoints ();
         void showMemory ();
@@ -87,7 +86,7 @@ class debugger
         std::vector <memoryRegion> memoryRegions;
         std::set <DWORD> interruptingEvents;
         std::set <DWORD> interruptingExceptions;
-        std::map <uint64_t, symbol> COFFfunctionNames;
+        std::map <uint64_t, symbol> COFFsymbols;
 
 
     	DEBUG_EVENT currentDebugEvent;

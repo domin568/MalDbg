@@ -15,11 +15,9 @@ t_GetFinalPathNameByHandleA GetFinalPathNameByHandleA()
     return f_GetFinalPathNameByHandleA;
 }
 
-// vec.erase(std::remove(vec.begin(), vec.end(), 8), vec.end());
-
-breakpoint * debugger::searchForBreakpoint (void * address)
+breakpoint * debugger::searchForBreakpoint (std::vector <breakpoint> & b, void * address)
 {
-    for (auto & i : breakpoints)
+    for (auto & i : b)
     {
         if (i.getAddress() == address)
         {
@@ -61,73 +59,24 @@ void * debugger::getNextInstructionAddress (void * ref)
 }
 void debugger::disasmAt (void * address, int numberOfInstructions)
 {
+    static disassembler d {debuggedProcessBaseAddress, &COFFsymbols};
     std::vector <breakpoint *> disassembledBreakpoints;
-    uint8_t * codeBuffer = new uint8_t [100];
-    if (!ReadProcessMemory (debuggedProcessHandle, (LPCVOID) address, codeBuffer, 100 , NULL))
+    uint8_t * codeBuffer = new uint8_t [numberOfInstructions * d.MAX_INSTRUCTION_LENGTH];
+    uint64_t readBytes;
+    if (!ReadProcessMemory (debuggedProcessHandle, (LPCVOID) address, codeBuffer, numberOfInstructions * d.MAX_INSTRUCTION_LENGTH , &readBytes) && readBytes == 0)
     {
         log ("Cannot read memory at %.16llx\n",logType::ERR, stdoutHandle, address);
         return;
     }
-    csh handle;
-    cs_insn *insn;
-    size_t count;
-
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK)
+    if (readBytes != numberOfInstructions * d.MAX_INSTRUCTION_LENGTH)
     {
-        return;
+        log ("Could read only %i bytes of memory at %.16llx\n",logType::ERR, stdoutHandle,readBytes , address);
     }
-
-    count = cs_disasm (handle, codeBuffer, 100 , (uint64_t)address, 0, &insn);
-    if (count > 0)
-    {
-        for (int j = 0; j < (numberOfInstructions >= count ? count : numberOfInstructions); j++) // iterate over all instructions disassembled to find breakpoint locations
-        {
-            breakpoint * bp = searchForBreakpoint ( (void *) insn[j].address);
-            if (bp)
-            {
-                disassembledBreakpoints.push_back (bp); // even if breakpoint is not restored yet or it is hardware it is displayed
-            }
-            if (!strncmp (insn[j].mnemonic, "int3", 4) && bp ) // if breakpoint is set and there is 0xcc byte 
-            {
-                printf ("Found int3 at %.16llx \n", insn[j].address);
-
-                if (bp->getType() == breakpointType::SOFTWARE_TYPE) // user software breakpoint
-                {
-                    size_t int3Offset = insn[j].address - (uint64_t) address;
-                    codeBuffer [int3Offset] = bp->getOriginalByte();
-                    cs_free (insn, count);
-                    count = cs_disasm (handle, codeBuffer, 100 , (uint64_t) address, 0, &insn); // disassembly again
-                }
-            }
-        }
-        for (int j = 0 ; j < (numberOfInstructions >= count ? count : numberOfInstructions); j++)
-        {
-            bool breakpointShown = false;
-            for (const auto & a : disassembledBreakpoints) // search for line with breakpoint
-            {
-                if ((void *) insn[j].address == a->getAddress() && a->getType() == breakpointType::SOFTWARE_TYPE && !a->getIsOneHit())
-                {
-                    printfColor ("0x%.16llx:\t%s\t\t%s\n", 12, stdoutHandle, insn[j].address, insn[j].mnemonic, insn[j].op_str); // breakpoint line spotted
-                    breakpointShown = true;
-                }
-                else if ((void *) insn[j].address == a->getAddress() && a->getType() == breakpointType::HARDWARE_TYPE)
-                {
-                    printfColor ("0x%.16llx:\t%s\t\t%s\n", 9, stdoutHandle,  insn[j].address, insn[j].mnemonic, insn[j].op_str);
-                    breakpointShown = true;
-                }
-            }
-            if (!breakpointShown) // if line is not breakpoint print it normally
-            {
-                printf ("0x%.16llx:\t%s\t\t%s\n",insn[j].address, insn[j].mnemonic, insn[j].op_str);
-            }
-        }
-        cs_free (insn, count);
-    }
-    else
-    {
-        log ("Cannot disassembly memory at %.16llx\n",logType::ERR, stdoutHandle,  address);
-    }
-    cs_close (&handle);
+    /*
+    memoryHelper h (debuggedProcessHandle, stdoutHandle);
+    h.printHexdump (address, readBytes);
+    */
+    d.disasm ((uint64_t) address, codeBuffer, readBytes, numberOfInstructions, breakpoints);    
     delete codeBuffer;
 }
 CONTEXT * debugger::getContext ()
@@ -543,7 +492,7 @@ debugger::debugger (std::string fileName)
 void debugger::handleSingleStep (EXCEPTION_DEBUG_INFO * exception)
 {
     uint64_t breakpointAddress = (uint64_t) exception->ExceptionRecord.ExceptionAddress;
-    breakpoint * bp = searchForBreakpoint ((void *) lastException.rip);
+    breakpoint * bp = searchForBreakpoint (breakpoints, (void *) lastException.rip);
 
     if (bp && !bp->getIsOneHit() && lastException.exceptionType == EXCEPTION_BREAKPOINT)
     {
@@ -565,7 +514,7 @@ void debugger::handleSingleStep (EXCEPTION_DEBUG_INFO * exception)
 void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception)
 {
     uint64_t breakpointAddress = (uint64_t) exception->ExceptionRecord.ExceptionAddress;
-    breakpoint * bp = searchForBreakpoint ( (void *) breakpointAddress);
+    breakpoint * bp = searchForBreakpoint (breakpoints, (void *) breakpointAddress);
 
     // TODOOOOOOOOOOOOOO HANDLE ni TO NOT OVERHEAT PROCESSOR hahahaha
 
@@ -679,12 +628,14 @@ bool debugger::parseSymbols (std::string filePath) // parse COFF symbols from PE
         std::vector <COFFentry> entries = parser.getCoffEntries();
         auto extendedNames = parser.getCoffExtendedNames();
         uint64_t coffExtendedNamesOffset = parser.getCoffExtendedNamesOffset();
-        COFFfunctionNames = symbolParser.parseSymbols (parser.getCoffEntries (), extendedNames, coffExtendedNamesOffset, parser);
+        COFFsymbols = symbolParser.parseSymbols (parser.getCoffEntries (), extendedNames, coffExtendedNamesOffset, parser);
         FILE * fw = fopen ("functions.txt", "wb");
+
         /*
-        for ( auto const& [key, val] : COFFfunctionNames )
+        
+        for ( auto const& [key, val] : COFFsymbols )
         {
-            //fprintf (fw, "%i %.16llx --> %s\n", val.type, key, val.name.c_str());
+            fprintf (fw, "%i %.16llx --> %s\n", val.type, key, val.name.c_str());
             //printf ("%.16llx --> %s\n",key, val.c_str());
         }
         */
