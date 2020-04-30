@@ -40,6 +40,7 @@ enum class commandType
     SET_REGISTER = 15,
     WRITE_MEMORY_INT = 16,
     HELP = 17,
+    BACKTRACE = 18,
     UNKNOWN = 0xFF
 };
 

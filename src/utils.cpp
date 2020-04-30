@@ -95,11 +95,17 @@ command * parseCommand (std::string c)
     std::regex setRegistersRegex ("^(sr|set register)\\s+((R|r)(ax|AX|bx|BX|cx|CX|dx|DX|bp|BP|sp|SP|si|SI|di|DI|8|9|10|11|12|13|14|15|flags|FLAGS))\\s+(0x)?([0-9a-fA-F]+)\\s*$");
     std::regex writeMemoryRegex ("^(wm|write memory)\\s+((0x)([0-9a-fA-F]+))\\s+([0-9]+)\\s+((0x)?([0-9a-fA-F]+))");
     std::regex helpRegex ("^help\\s*$");
+    std::regex backtraceRegex ("^(bt|backtrace)\\s*$");
     std::smatch match;
 
     if (std::regex_search(c, match, helpRegex))
     {
         comm->type = commandType::HELP;
+        return comm;
+    }
+    else if (std::regex_search(c, match, backtraceRegex))
+    {
+        comm->type = commandType::BACKTRACE;
         return comm;
     }
     else if (std::regex_search (c, match, continueRegex))

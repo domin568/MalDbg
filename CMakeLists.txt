@@ -56,6 +56,6 @@ add_executable (${EXECUTABLE_NAME} ${SOURCE_FILES})
 
 add_dependencies (${EXECUTABLE_NAME} capstone-shared)
 
-target_link_libraries (${EXECUTABLE_NAME} shlwapi capstone-shared)
+target_link_libraries (${EXECUTABLE_NAME} shlwapi dbghelp capstone-shared)
 
 install( TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_PREFIX} COMPONENT ${PROJECT_NAME} )

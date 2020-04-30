@@ -79,27 +79,37 @@ void debugger::disasmAt (void * address, int numberOfInstructions)
     d.disasm ((uint64_t) address, codeBuffer, readBytes, numberOfInstructions, breakpoints);    
     delete codeBuffer;
 }
-CONTEXT * debugger::getContext ()
+CONTEXT debugger::getContext (DWORD flags)
 {
-    CONTEXT * lcContext = new CONTEXT;
-    lcContext->ContextFlags = CONTEXT_ALL;
-    HANDLE threadHandle = OpenThread (THREAD_GET_CONTEXT, FALSE, currentDebugEvent.dwThreadId);
+    CONTEXT lcContext;
+    lcContext.ContextFlags = flags;
+    HANDLE threadHandle = OpenThread (THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, currentDebugEvent.dwThreadId);
     if (threadHandle == NULL)
     {
-        log ("Cannot get handle to thread that caused exception",logType::ERR, stdoutHandle);
-        return NULL;
+        return lcContext;
     }
-    if (!GetThreadContext(threadHandle, lcContext))
+    if(SuspendThread(threadHandle) == -1)
+    {
+        log ("Cannot get handle to thread that caused exception",logType::ERR, stdoutHandle);
+        return lcContext;
+    }
+
+    if (!GetThreadContext(threadHandle, &lcContext))
     {
         log ("Cannot get thread context that caused exception",logType::ERR, stdoutHandle);
-        return NULL;
+        return lcContext;
+    }
+    if(ResumeThread(threadHandle) == -1)
+    {
+        log ("Cannot resume thread after getting context",logType::ERR, stdoutHandle);
+        return lcContext;
     }
     return lcContext;
 }
-void debugger::setContext (CONTEXT * context)
+void debugger::setContext (CONTEXT & context)
 {
     HANDLE threadHandle = OpenThread (THREAD_SET_CONTEXT, FALSE, currentDebugEvent.dwThreadId);
-    if (!SetThreadContext(threadHandle, context))
+    if (!SetThreadContext(threadHandle, &context))
     {
         log ("Cannot set thread context",logType::ERR, stdoutHandle);
         return;
@@ -107,17 +117,17 @@ void debugger::setContext (CONTEXT * context)
 }
 void debugger::showContext ()
 {
-    CONTEXT * lcContext = this->currentContext;
+    CONTEXT lcContext = this->currentContext;
 
     printf ("\n");
 
-    DWORD flg = lcContext->EFlags;
+    DWORD flg = lcContext.EFlags;
 
     log ("RAX %.16llx RBX %.16llx RCX %.16llx\nRDX %.16llx RSI %.16llx RDI %.16llx",logType::CONTEXT_REGISTERS, stdoutHandle, 
-        lcContext->Rax, lcContext->Rbx, lcContext->Rcx, lcContext->Rdx, lcContext->Rsi, lcContext->Rdi);
+        lcContext.Rax, lcContext.Rbx, lcContext.Rcx, lcContext.Rdx, lcContext.Rsi, lcContext.Rdi);
     log ("R8  %.16llx R9  %.16llx R10 %.16llx\nR11 %.16llx R12 %.16llx R13 %.16llx\nR14 %.16llx R15 %.16llx FLG %.16llx",logType::CONTEXT_REGISTERS, stdoutHandle, 
-        lcContext->R8, lcContext->R9, lcContext->R10, lcContext->R11, lcContext->R12, lcContext->R13, lcContext->R14, lcContext->R15, lcContext->EFlags);
-    log ("RIP %.16llx RBP %.016x RSP %.016x", logType::CONTEXT_REGISTERS, stdoutHandle, lcContext->Rip, lcContext->Rbp, lcContext->Rsp);
+        lcContext.R8, lcContext.R9, lcContext.R10, lcContext.R11, lcContext.R12, lcContext.R13, lcContext.R14, lcContext.R15, lcContext.EFlags);
+    log ("RIP %.16llx RBP %.016x RSP %.016x", logType::CONTEXT_REGISTERS, stdoutHandle, lcContext.Rip, lcContext.Rbp, lcContext.Rsp);
 
     log ("ZF %.1x CF %.1x PF %.1x AF %.1x SF %.1x TF %.1x IF %.1x DF %.1x OF %.1x",logType::CONTEXT_REGISTERS, stdoutHandle, 
         (flg & (1 << 6)) >> 6, flg & 1, (flg & (1 << 2)) >> 2, (flg & (1 << 4)) >> 4, (flg & (1 << 7)) >> 7, (flg & (1 << 8)) >> 8,
@@ -125,7 +135,7 @@ void debugger::showContext ()
 
     printf ("\n");
 
-    disasmAt ((void *)lcContext->Rip, SHOW_CONTEXT_INSTRUCTION_COUNT);   
+    disasmAt ((void *)lcContext.Rip, SHOW_CONTEXT_INSTRUCTION_COUNT);   
 
     printf ("\n"); 
 }
@@ -189,7 +199,7 @@ DWORD debugger::run (std::string fileName)
             return 2;
         }
 
-        this->currentContext = getContext ();
+        this->currentContext = getContext (CONTEXT_ALL);
         DWORD debugResponse = processDebugEvents(&currentDebugEvent, &debuggingActive);
 
         if (!bypassInterruptOnce)
@@ -205,7 +215,6 @@ DWORD debugger::run (std::string fileName)
             ContinueDebugEvent (currentDebugEvent.dwProcessId,currentDebugEvent.dwThreadId,debugResponse);
         }
     }
-    delete this->currentContext;
     return 0;
 }
 void debugger::showBreakpoints ()
@@ -240,72 +249,142 @@ void debugger::setRegisterWithValue (std::string registerString, uint64_t value)
 {
     if (registerString == "rax" | registerString == "RAX" )
     {
-        currentContext->Rax = value;
+        currentContext.Rax = value;
     }
     else if (registerString == "rbx" | registerString == "RBX" )
     {
-        currentContext->Rbx = value;
+        currentContext.Rbx = value;
     }
     else if (registerString == "rcx" | registerString == "RCX" )
     {
-        currentContext->Rcx = value;
+        currentContext.Rcx = value;
     }
     else if (registerString == "rdx" | registerString == "RDX" )
     {
-        currentContext->Rdx = value;
+        currentContext.Rdx = value;
     }
     else if (registerString == "rbp" | registerString == "RBP" )
     {
-        currentContext->Rbp = value;
+        currentContext.Rbp = value;
     }
     else if (registerString == "rsp" | registerString == "RSP" )
     {
-        currentContext->Rsp = value;
+        currentContext.Rsp = value;
     }
     else if (registerString == "rdi" | registerString == "RDI" )
     {
-        currentContext->Rdi = value;
+        currentContext.Rdi = value;
     }
     else if (registerString == "rsi" | registerString == "RSI" )
     {
-        currentContext->Rsi = value;
+        currentContext.Rsi = value;
     }
     else if (registerString == "r8" | registerString == "R8" )
     {
-        currentContext->R8 = value;
+        currentContext.R8 = value;
     }
     else if (registerString == "r9" | registerString == "R9" )
     {
-        currentContext->R9 = value;
+        currentContext.R9 = value;
     }
     else if (registerString == "r10" | registerString == "R10" )
     {
-        currentContext->R10 = value;
+        currentContext.R10 = value;
     }
     else if (registerString == "r11" | registerString == "R11" )
     {
-        currentContext->R11 = value;
+        currentContext.R11 = value;
     }
     else if (registerString == "r12" | registerString == "R12" )
     {
-        currentContext->R12 = value;
+        currentContext.R12 = value;
     }
     else if (registerString == "r13" | registerString == "R13" )
     {
-        currentContext->R13 = value;
+        currentContext.R13 = value;
     }  
     else if (registerString == "r14" | registerString == "R14" )
     {
-        currentContext->R14 = value;
+        currentContext.R14 = value;
     }  
     else if (registerString == "r15" | registerString == "R15" )
     {
-        currentContext->R15 = value;
+        currentContext.R15 = value;
     }  
     else if (registerString == "rflags" | registerString == "RFLAGS" )
     {
-        currentContext->EFlags = value;
+        currentContext.EFlags = value;
     }              
+}
+HANDLE debugger::getCurrentThread ()
+{
+    return OpenThread (THREAD_GET_CONTEXT, FALSE, currentDebugEvent.dwThreadId);
+}
+void debugger::showBacktrace ()
+{
+    // CaptureStackBackTrace
+    //std::vector<CALLSTACKENTRY> callstackVector;
+    CONTEXT context = getContext(CONTEXT_CONTROL | CONTEXT_INTEGER);
+
+    STACKFRAME64 frame;
+
+    ZeroMemory(&frame, sizeof(STACKFRAME64));
+
+    DWORD machineType = IMAGE_FILE_MACHINE_AMD64;
+
+    frame.AddrPC.Offset = context.Rip;
+    frame.AddrPC.Mode = AddrModeFlat;
+
+    frame.AddrFrame.Offset = context.Rsp;
+    frame.AddrFrame.Mode = AddrModeFlat;
+
+    frame.AddrStack.Offset = context.Rsp; // ???? was csp like generic stack pointer
+    frame.AddrStack.Mode = AddrModeFlat;
+
+    const int MaxWalks = 50;
+    // Container for each callstack entry (50 pre-allocated entries)
+    //callstackVector.clear();
+    //callstackVector.reserve(MaxWalks);
+
+    HANDLE hThread = getCurrentThread ();
+    if (hThread == NULL)
+    {
+        log ("Cannot get handle to current thread when backtracing\n", logType::ERR, stdoutHandle);
+        return;
+    }
+
+    for (int i = 0; i < MaxWalks; i++)
+    {
+        if(!StackWalk64(
+                    machineType,
+                    debuggedProcessHandle,
+                    hThread,
+                    &frame,
+                    &context,
+                    NULL,
+                    SymFunctionTableAccess64,
+                    SymGetModuleBase64,
+                    NULL))
+        {
+            break;
+        }
+
+        if(frame.AddrPC.Offset != 0)
+        {
+            printf ("addr %.16llx ret %.16llx frame %.16llx stack %.16llx \n", frame.AddrPC.Offset, frame.AddrReturn.Offset, frame.AddrFrame.Offset, frame.AddrStack.Offset);
+
+            /*
+            CALLSTACKENTRY entry;
+            memset(&entry, 0, sizeof(CALLSTACKENTRY));
+            StackEntryFromFrame(&entry, (duint)frame.AddrFrame.Offset + sizeof(duint), (duint)frame.AddrPC.Offset, (duint)frame.AddrReturn.Offset);
+            callstackVector.push_back(entry);
+            */
+        }
+        else
+        {
+            break;
+        }
+    }
 }
 void debugger::handleCommands(command * currentCommand)
 {
@@ -321,6 +400,10 @@ void debugger::handleCommands(command * currentCommand)
         }
         SetEvent (continueDebugEvent);
         commandModeActive = false;
+    }
+    else if (currentCommand->type == commandType::BACKTRACE)
+    {
+        showBacktrace ();
     }
     else if (currentCommand->type == commandType::SOFT_BREAKPOINT)
     {
@@ -398,7 +481,7 @@ void debugger::handleCommands(command * currentCommand)
     }
     else if (currentCommand->type == commandType::STEP_IN)
     {
-        this->currentContext->EFlags |= 0x100;
+        this->currentContext.EFlags |= 0x100;
         SetEvent (continueDebugEvent);
         commandModeActive = false;
     }
@@ -408,7 +491,7 @@ void debugger::handleCommands(command * currentCommand)
         {
             bypassInterruptOnce = true;
         }
-        void * addr = getNextInstructionAddress ( (void *) currentContext->Rip);
+        void * addr = getNextInstructionAddress ( (void *) currentContext.Rip);
         if (addr)
         {
             placeSoftwareBreakpoint (addr, true);
@@ -501,7 +584,7 @@ void debugger::handleSingleStep (EXCEPTION_DEBUG_INFO * exception, std::string s
         {
             log ("Cannot set breakpoint again (in single step exception)\n",logType::ERR, stdoutHandle);
         }
-        this->currentContext->EFlags &= ~0x100;
+        this->currentContext.EFlags &= ~0x100;
     }
     else
     {
@@ -524,12 +607,12 @@ void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception, std::string s
         {
             log ("Cannot restore breakpoint at 0x%.16llx <%s->%s>\n",logType::INFO, stdoutHandle, breakpointAddress, moduleName.c_str(), sectionName.c_str());   
         }
-        bp->getIsOneHit() == 0 ? currentContext->EFlags |= 0x100 : currentContext->EFlags &= ~0x100;
+        bp->getIsOneHit() == 0 ? currentContext.EFlags |= 0x100 : currentContext.EFlags &= ~0x100;
         bp->getIsOneHit() == 0 ? lastException.oneHitBreakpoint = 0 : lastException.oneHitBreakpoint = 1;
         lastException.exceptionType = (DWORD) exception->ExceptionRecord.ExceptionCode;
         lastException.rip = breakpointAddress;
 
-        this->currentContext->Rip--; // int3 already consumed, need to revert execution state
+        this->currentContext.Rip--; // int3 already consumed, need to revert execution state
     }
     else // system breakpoint
     {
@@ -632,6 +715,9 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
 }
 bool debugger::parseSymbols (std::string filePath) // parse COFF symbols from PE reading it from disk
 {
+
+    // UnDecorateSymbolName
+
     PEparser parser (filePath);
     uint32_t coffTableOffset = parser.getCoffSymbolTableOffset ();
     uint32_t coffSymbolNumber = parser.getCoffSymbolNumber ();
@@ -688,7 +774,10 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
         case CREATE_THREAD_DEBUG_EVENT:
         {
             CREATE_THREAD_DEBUG_INFO * infoThread = &event->u.CreateThread;
-            log ("Thread 0x%x created with entry address 0x%.16llx\n", logType::THREAD, stdoutHandle, event->dwThreadId, infoThread->lpStartAddress);
+            currentMemoryMap->updateMemoryMap ();
+            std::string sectionName = currentMemoryMap->getSectionNameForAddress ((uint64_t) infoThread->lpStartAddress);
+            std::string moduleName = currentMemoryMap->getImageNameForAddress((uint64_t) infoThread->lpStartAddress);
+            log ("Thread 0x%x created with entry address 0x%.16llx <%s->%s>\n", logType::THREAD, stdoutHandle, event->dwThreadId, infoThread->lpStartAddress, moduleName.c_str(), sectionName.c_str());
             return DBG_CONTINUE;
         }
         case LOAD_DLL_DEBUG_EVENT:

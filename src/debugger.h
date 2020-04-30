@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include <dbghelp.h>
 #include <string>
 #include <stdio.h>
 #include <thread>
@@ -43,8 +44,9 @@ class debugger
         void placeSoftwareBreakpoint (void *, bool);
         void interactiveCommands ();
         void handleCommands (command *);
-        CONTEXT * getContext ();
-        void setContext (CONTEXT *);
+        CONTEXT getContext (DWORD);
+        HANDLE getCurrentThread ();
+        void setContext (CONTEXT &);
         void showContext ();
         void disasmAt (void *, int);
         void checkInterruptEvent ();
@@ -56,9 +58,10 @@ class debugger
         bool deleteBreakpointByIndex (uint64_t);
         void setRegisterWithValue (std::string, uint64_t);
         bool parseSymbols (std::string);
+        void showBacktrace ();
         
 
-        CONTEXT * currentContext; // shared resource, never used in paralel
+        CONTEXT currentContext; // shared resource, never used in paralel
         memoryMap * currentMemoryMap;
         memoryHelper * memHelper;
         
