@@ -67,4 +67,5 @@ class PEparser
 	void showSections ();
 	std::map <uint64_t, section> getPESections ();
 	uint64_t fileOffsetToVirtualAddress (uint64_t); 
+	std::vector <RUNTIME_FUNCTION> getPdataEntries ();
 };

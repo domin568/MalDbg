@@ -20,13 +20,6 @@
 #include "structs.h"
 #include "disassembly.h"
 
-struct exceptionData
-{
-    DWORD exceptionType;
-    DWORD rip;
-    bool oneHitBreakpoint;
-};
-
 class debugger
 {
     private:
@@ -58,6 +51,7 @@ class debugger
         bool deleteBreakpointByIndex (uint64_t);
         void setRegisterWithValue (std::string, uint64_t);
         bool parseSymbols (std::string);
+        std::string getFunctionNameForAddress (uint64_t address);
         void showBacktrace ();
         
 
@@ -87,6 +81,7 @@ class debugger
         //std::map <uint64_t,uint8_t> breakpointsStolenBytes;
         std::vector <breakpoint> breakpoints;
         std::vector <memoryRegion> memoryRegions;
+        std::vector <function> functionNames;
         std::set <DWORD> interruptingEvents;
         std::set <DWORD> interruptingExceptions;
         std::map <uint64_t, symbol> COFFsymbols;

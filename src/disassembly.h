@@ -8,6 +8,7 @@
 #include "breakpoint.h"
 #include "utils.h"
 #include "symbolParse.h"
+#include "structs.h"
 
 struct instructionType
 {
@@ -64,7 +65,12 @@ class disassembler
 		uint64_t baseAddress;
 		DWORD defaultColor;
 		std::map <uint64_t, symbol> const * symbols;
+		std::vector <function> const * functionNames;
+
 		breakpoint * searchForBreakpoint (std::vector <breakpoint> & b, void * address);
+		std::string getFunctionNameStartForAddress (uint64_t address);
+		std::string getFunctionNameEndForAddress (uint64_t address);
+
 		void changeBreakpointsToOriginal (
 			std::vector <breakpoint *> &,
 			std::vector <breakpoint> &,
@@ -81,7 +87,7 @@ class disassembler
 	 	void parseOperands ();
 	public:
 		const uint32_t MAX_INSTRUCTION_LENGTH = 15;
-		disassembler (uint64_t, std::map <uint64_t, symbol> const *);
+		disassembler (uint64_t, std::map <uint64_t, symbol> const *, std::vector <function> const *);
 		~disassembler ();
 		void disasm (uint64_t, uint8_t *, uint32_t, uint32_t, std::vector <breakpoint> &);
 };

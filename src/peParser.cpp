@@ -368,3 +368,45 @@ std::string PEparser::getSectionNameForAddress (uint64_t addr) // RVA for file, 
 	}
 	return "?";
 }
+std::vector <RUNTIME_FUNCTION> PEparser::getPdataEntries ()
+{
+	uint64_t addrToRead = 0;
+	uint64_t size = 0;
+	std::vector<IMAGE_SECTION_HEADER> sections = (virtualMode == 1 ? getSectionsVirtual () : getSectionsFile ());
+	for (const auto & section : sections)
+	{
+		if (!strncmp ( (const char *) section.Name, ".pdata\x00\x00", 8))
+		{
+			size = section.SizeOfRawData;
+			if (virtualMode)
+			{
+				addrToRead = (uint64_t) baseAddress + section.VirtualAddress;
+			}
+			else
+			{
+				addrToRead = section.PointerToRawData;
+			}
+		}
+	}
+
+	std::vector <RUNTIME_FUNCTION> pdataEntries ( (size / sizeof(RUNTIME_FUNCTION)) + sizeof(RUNTIME_FUNCTION) ); // because /3 is truncating result
+
+	if (virtualMode)
+	{
+		if (!ReadProcessMemory (processHandle, (LPCVOID) addrToRead, (uint8_t *) pdataEntries.data(), size, NULL))
+		{
+			log ("Cannot read .pdata contents from module to get functions start and end addresses\n", logType::ERR, stdoutHandle);
+			throw std::exception ();
+		}
+	}
+	else
+	{
+		fseek (f, addrToRead ,0);
+		if (fread (pdataEntries.data(), 1, size, f) != size)
+		{
+			log ("Cannot read .pdata contents from file to get functions start and end addresses\n", logType::ERR, stdoutHandle);
+			throw std::exception ();
+		}
+	}
+	return pdataEntries;
+}

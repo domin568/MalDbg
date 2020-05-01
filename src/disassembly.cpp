@@ -1,10 +1,11 @@
 #include "disassembly.h"
 
-disassembler::disassembler(uint64_t baseAddress, std::map <uint64_t, symbol> const * symbols)
+disassembler::disassembler(uint64_t baseAddress, std::map <uint64_t, symbol> const * symbols, std::vector <function> const * functionNames)
 {
 	stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
 	this->baseAddress = baseAddress;
 	this->symbols = symbols;
+    this->functionNames = functionNames;
 
 	defaultColor = getCurrentPromptColor (stdoutHandle);
 
@@ -58,7 +59,7 @@ void disassembler::changeBreakpointsToOriginal (
             {
                 size_t int3Offset = (*insn)[j].address - (uint64_t) address;
                 codeBuffer [int3Offset] = bp->getOriginalByte();
-                cs_free (*insn, count);
+                //cs_free (*insn, count);
                 count = cs_disasm (handle, codeBuffer, codeSize , (uint64_t) address, 0, insn); // disassembly again
             }
         }
@@ -107,11 +108,19 @@ instructionType disassembler::getInstructionType (cs_insn insn, cs_detail * deta
 }
 void disassembler::parseInstruction (cs_insn insn, disassemblyLineInfo & lineInfo)
 {
-	if (symbols->find(insn.address - baseAddress) != symbols->end())
+    std::string start = getFunctionNameStartForAddress (insn.address);
+    std::string end = getFunctionNameEndForAddress (insn.address);
+
+	if (start.size() > 0)
     {
-        std::string a = symbols->at(insn.address - baseAddress).name;
-        centerTextColor (a.c_str(), 60, 15, stdoutHandle);
+        centerTextColor (start.c_str(), 60, 15, stdoutHandle);
         printf ("\n\n");
+    }
+    else if (end.size() > 0)
+    {
+        std::string toWrite = "end " + end;
+        centerTextColor (toWrite.c_str(), 60, 15, stdoutHandle);
+        printf ("\n\n");   
     }
 	cs_detail *detail = insn.detail;
 	instructionType type = getInstructionType (insn, detail);
@@ -129,7 +138,7 @@ void disassembler::parseInstruction (cs_insn insn, disassemblyLineInfo & lineInf
         {
             if (symbols->find(op->imm - baseAddress) != symbols->end())
             {
-                std::string a = symbols->at(op->imm - baseAddress).name;
+                std::string a = symbols->at(op->imm - baseAddress).name + " <" + intToHex (op->imm) + ">";
                 lineInfo.op.str = a;
                 lineInfo.op.color = 15;
                 return;
@@ -140,7 +149,7 @@ void disassembler::parseInstruction (cs_insn insn, disassemblyLineInfo & lineInf
         	uint64_t relativeAddress = X86_REL_ADDR (insn);
         	if (symbols->find(relativeAddress - baseAddress) != symbols->end())
             {
-                std::string a = symbols->at(relativeAddress - baseAddress).name;
+                std::string a = symbols->at(relativeAddress - baseAddress).name + " <" + intToHex (op->imm) + ">";
                 lineInfo.op.str = a;
                 lineInfo.op.color = 15;
                 return;
@@ -277,5 +286,26 @@ void disassembler::disasm (uint64_t address, uint8_t * codeBuffer, uint32_t code
     {
         log ("Cannot disassembly memory at %.16llx\n",logType::ERR, stdoutHandle,  address);
     }
-
+}
+std::string disassembler::getFunctionNameStartForAddress (uint64_t address)
+{
+    for (const auto & func : *functionNames)
+    {
+        if (address == func.start)
+        {
+            return func.name;
+        }
+    }
+    return "";
+}
+std::string disassembler::getFunctionNameEndForAddress (uint64_t address)
+{
+    for (const auto & func : *functionNames)
+    {
+        if (address == func.end)
+        {
+            return func.name;
+        }
+    }
+    return "";
 }

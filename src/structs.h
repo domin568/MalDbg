@@ -175,6 +175,19 @@ struct _PEB_T
 	T SystemAssemblyStorageMap;
 	T MinimumStackCommit;
 };
+
+struct exceptionData
+{
+    DWORD exceptionType;
+    DWORD rip;
+    bool oneHitBreakpoint;
+};
+struct function
+{
+    std::string name;
+    uint64_t start;
+    uint64_t end;
+};
  
 typedef _LDR_DATA_TABLE_ENTRY<DWORD> LDR_TABLE32;
 typedef _LDR_DATA_TABLE_ENTRY<DWORD64> LDR_TABLE64;

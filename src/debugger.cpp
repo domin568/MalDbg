@@ -59,7 +59,7 @@ void * debugger::getNextInstructionAddress (void * ref)
 }
 void debugger::disasmAt (void * address, int numberOfInstructions)
 {
-    static disassembler d {debuggedProcessBaseAddress, &COFFsymbols};
+    static disassembler d {debuggedProcessBaseAddress, &COFFsymbols, &functionNames};
     std::vector <breakpoint *> disassembledBreakpoints;
     uint8_t * codeBuffer = new uint8_t [numberOfInstructions * d.MAX_INSTRUCTION_LENGTH];
     uint64_t readBytes;
@@ -86,22 +86,23 @@ CONTEXT debugger::getContext (DWORD flags)
     HANDLE threadHandle = OpenThread (THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, currentDebugEvent.dwThreadId);
     if (threadHandle == NULL)
     {
+        log ("Cannot get thread handle when getting context \n",logType::ERR, stdoutHandle);
         return lcContext;
     }
     if(SuspendThread(threadHandle) == -1)
     {
-        log ("Cannot get handle to thread that caused exception",logType::ERR, stdoutHandle);
+        log ("Cannot get handle to thread that caused exception  \n",logType::ERR, stdoutHandle);
         return lcContext;
     }
 
     if (!GetThreadContext(threadHandle, &lcContext))
     {
-        log ("Cannot get thread context that caused exception",logType::ERR, stdoutHandle);
+        log ("Cannot get thread context that caused exception \n",logType::ERR, stdoutHandle);
         return lcContext;
     }
     if(ResumeThread(threadHandle) == -1)
     {
-        log ("Cannot resume thread after getting context",logType::ERR, stdoutHandle);
+        log ("Cannot resume thread after getting context \n",logType::ERR, stdoutHandle);
         return lcContext;
     }
     return lcContext;
@@ -132,6 +133,28 @@ void debugger::showContext ()
     log ("ZF %.1x CF %.1x PF %.1x AF %.1x SF %.1x TF %.1x IF %.1x DF %.1x OF %.1x",logType::CONTEXT_REGISTERS, stdoutHandle, 
         (flg & (1 << 6)) >> 6, flg & 1, (flg & (1 << 2)) >> 2, (flg & (1 << 4)) >> 4, (flg & (1 << 7)) >> 7, (flg & (1 << 8)) >> 8,
         (flg & (1 << 9)) >> 9, (flg & (1 << 10)) >> 10, (flg & (1 << 11)) >> 11 );
+
+    printf ("\n");
+
+    uint64_t displacement;
+    SymInitialize(debuggedProcessHandle, NULL, TRUE ); // ?????? 
+    char * buffer = new char [sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
+
+    PSYMBOL_INFO pSymbol = (PSYMBOL_INFO) buffer;
+    pSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+    pSymbol->MaxNameLen = MAX_SYM_NAME;
+
+    SymFromAddr(debuggedProcessHandle, ( ULONG64 )currentContext.Rip, &displacement, pSymbol);
+    size_t symbolNameSize = strlen (pSymbol->Name);
+
+    std::string internalFuncName = getFunctionNameForAddress((uint64_t)currentContext.Rip);
+    log ("-----> %s\n",
+        logType::INFO,
+        stdoutHandle,
+        (symbolNameSize > 0 ? pSymbol->Name : internalFuncName.c_str())
+        );
+
+    delete buffer;
 
     printf ("\n");
 
@@ -200,6 +223,7 @@ DWORD debugger::run (std::string fileName)
         }
 
         this->currentContext = getContext (CONTEXT_ALL);
+
         DWORD debugResponse = processDebugEvents(&currentDebugEvent, &debuggingActive);
 
         if (!bypassInterruptOnce)
@@ -320,11 +344,32 @@ HANDLE debugger::getCurrentThread ()
 {
     return OpenThread (THREAD_GET_CONTEXT, FALSE, currentDebugEvent.dwThreadId);
 }
+std::string debugger::getFunctionNameForAddress (uint64_t address)
+{
+    for (const auto & func : functionNames)
+    {
+        if (address >= func.start && address <= func.end)
+        {
+            return func.name;
+        }
+    }
+    return "?";
+}
 void debugger::showBacktrace ()
 {
     // CaptureStackBackTrace
     //std::vector<CALLSTACKENTRY> callstackVector;
+    const int MaxNameLen = 256;
     CONTEXT context = getContext(CONTEXT_CONTROL | CONTEXT_INTEGER);
+
+    char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
+    char name[MaxNameLen];
+    char module[MaxNameLen];
+    PSYMBOL_INFO pSymbol = (PSYMBOL_INFO)buffer;
+
+    DWORD64             displacement;
+
+    DWORD disp;
 
     STACKFRAME64 frame;
 
@@ -352,6 +397,8 @@ void debugger::showBacktrace ()
         log ("Cannot get handle to current thread when backtracing\n", logType::ERR, stdoutHandle);
         return;
     }
+    SymInitialize(debuggedProcessHandle, NULL, TRUE ); // ?????? 
+    currentMemoryMap->updateMemoryMap ();
 
     for (int i = 0; i < MaxWalks; i++)
     {
@@ -369,16 +416,24 @@ void debugger::showBacktrace ()
             break;
         }
 
+        pSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
+        pSymbol->MaxNameLen = MAX_SYM_NAME;
+        SymFromAddr(debuggedProcessHandle, ( ULONG64 )frame.AddrPC.Offset, &displacement, pSymbol);
+        size_t symbolNameSize = strlen (pSymbol->Name);
+
+        std::string internalSymbolName = getFunctionNameForAddress(frame.AddrPC.Offset);
+
         if(frame.AddrPC.Offset != 0)
         {
-            printf ("addr %.16llx ret %.16llx frame %.16llx stack %.16llx \n", frame.AddrPC.Offset, frame.AddrReturn.Offset, frame.AddrFrame.Offset, frame.AddrStack.Offset);
+            std::string sectionName = currentMemoryMap->getSectionNameForAddress (frame.AddrPC.Offset);
+            std::string moduleName = currentMemoryMap->getImageNameForAddress(frame.AddrPC.Offset);
 
-            /*
-            CALLSTACKENTRY entry;
-            memset(&entry, 0, sizeof(CALLSTACKENTRY));
-            StackEntryFromFrame(&entry, (duint)frame.AddrFrame.Offset + sizeof(duint), (duint)frame.AddrPC.Offset, (duint)frame.AddrReturn.Offset);
-            callstackVector.push_back(entry);
-            */
+            printf ("#%d %.16llx <%s->%s> (%s)\n",
+                    i,
+                    frame.AddrPC.Offset,
+                    moduleName.c_str(),
+                    sectionName.c_str(),
+                    (symbolNameSize == 0 ? internalSymbolName.c_str() : pSymbol->Name));
         }
         else
         {
@@ -392,7 +447,7 @@ void debugger::handleCommands(command * currentCommand)
     {
         printHelp ();
     }
-    else if (currentCommand->type == commandType::CONTINUE)
+    else if (currentCommand->type == commandType::CONTINUE && debuggingActive)
     {
         if (lastException.exceptionType == EXCEPTION_BREAKPOINT) // single_step after breakpoint restoring breakpoint but we do not want to interrupt that time
         {
@@ -405,30 +460,30 @@ void debugger::handleCommands(command * currentCommand)
     {
         showBacktrace ();
     }
-    else if (currentCommand->type == commandType::SOFT_BREAKPOINT)
+    else if (currentCommand->type == commandType::SOFT_BREAKPOINT && debuggingActive)
     {
         void * breakpointAddress = parseStringToAddress(currentCommand->arguments[0].arg);
         placeSoftwareBreakpoint (breakpointAddress, false);
     }
-    else if (currentCommand->type == commandType::WRITE_MEMORY_INT)
+    else if (currentCommand->type == commandType::WRITE_MEMORY_INT && debuggerActive)
     {
         void * address = parseStringToAddress (currentCommand->arguments[0].arg);
         uint32_t size = parseStringToNumber (currentCommand->arguments[1].arg, 10); // maximum 8 bytes
         uint64_t value = parseStringToNumber (currentCommand->arguments[2].arg, 16);
         memHelper->writeIntAt (value, address, size);
     }
-    else if (currentCommand->type == commandType::SHOW_MEMORY_REGIONS)
+    else if (currentCommand->type == commandType::SHOW_MEMORY_REGIONS && debuggingActive)
     {
         currentMemoryMap->updateMemoryMap ();
         currentMemoryMap->showMemoryMap ();
     }
-    else if (currentCommand->type == commandType::SET_REGISTER)
+    else if (currentCommand->type == commandType::SET_REGISTER && debuggingActive)
     {
         std::string registerString = currentCommand->arguments[0].arg;
         uint64_t value = parseStringToNumber (currentCommand->arguments[1].arg, 16);
         setRegisterWithValue (currentCommand->arguments[0].arg, value);
     }
-    else if (currentCommand->type == commandType::HEXDUMP)
+    else if (currentCommand->type == commandType::HEXDUMP && debuggingActive)
     {
         void * address = parseStringToAddress (currentCommand->arguments[0].arg);
         uint32_t size = parseStringToNumber (currentCommand->arguments[1].arg, 10);
@@ -447,10 +502,11 @@ void debugger::handleCommands(command * currentCommand)
             deleteBreakpointByIndex (breakpointNumber);
         }
     }
-    else if (currentCommand->type == commandType::DISASM)
+    else if (currentCommand->type == commandType::DISASM && debuggingActive)
     {
         void * address = parseStringToAddress(currentCommand->arguments[0].arg);
         int numberOfInstructions = parseStringToNumber(currentCommand->arguments[1].arg, 10);
+
         disasmAt (address,numberOfInstructions);
     }
     else if (currentCommand->type == commandType::SHOW_BREAKPOINTS)
@@ -479,13 +535,13 @@ void debugger::handleCommands(command * currentCommand)
         debuggerThread.join();
         commandModeActive = false;
     }
-    else if (currentCommand->type == commandType::STEP_IN)
+    else if (currentCommand->type == commandType::STEP_IN && debuggingActive)
     {
         this->currentContext.EFlags |= 0x100;
         SetEvent (continueDebugEvent);
         commandModeActive = false;
     }
-    else if (currentCommand->type == commandType::NEXT_INSTRUCTION)
+    else if (currentCommand->type == commandType::NEXT_INSTRUCTION && debuggingActive)
     {
         if (lastException.exceptionType == EXCEPTION_BREAKPOINT && !lastException.oneHitBreakpoint) // single_step after breakpoint restoring breakpoint but we do not want to interrupt that time
         {
@@ -503,7 +559,7 @@ void debugger::handleCommands(command * currentCommand)
         SetEvent (continueDebugEvent);
         commandModeActive = false;
     }
-    else if (currentCommand->type == commandType::CONTEXT)
+    else if (currentCommand->type == commandType::CONTEXT && debuggingActive)
     {
         showContext ();
     }
@@ -515,7 +571,11 @@ void debugger::interactiveCommands ()
     {
         WaitForSingleObject (commandEvent,INFINITE); 
         // interrupt reached
-        showContext ();
+        if (debuggingActive)
+        {
+            showContext ();
+        }
+        
         commandModeActive = true;
         while (commandModeActive)
         {
@@ -668,8 +728,8 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
             printf ("Access Violation (0x%.08x) at 0x%.16llx <%s->%s>\n",
                     exception->ExceptionRecord.ExceptionCode,
                     exception->ExceptionRecord.ExceptionAddress,
-                    sectionName.c_str(),
-                    moduleName.c_str()
+                    moduleName.c_str(),
+                    sectionName.c_str()
                     );
             return DBG_EXCEPTION_NOT_HANDLED;
         }
@@ -682,8 +742,8 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
         {
             printf ("Division by zero exception at 0x%.16llx <%s->%s>\n",
                     exception->ExceptionRecord.ExceptionAddress,
-                    sectionName.c_str(),
-                    moduleName.c_str()
+                    moduleName.c_str(),
+                    sectionName.c_str()
                    );
             return DBG_EXCEPTION_NOT_HANDLED;
         }
@@ -691,8 +751,8 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
         {
             printf ("Privileged instruction was spotted at 0x%.16llx <%s->%s>\n",
                     exception->ExceptionRecord.ExceptionAddress,
-                    sectionName.c_str(),
-                    moduleName.c_str()
+                    moduleName.c_str(),
+                    sectionName.c_str()
                    );  
             return DBG_EXCEPTION_NOT_HANDLED;
         }
@@ -706,8 +766,8 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
             log ("Not implemented exception yet at 0x%.16llx <%s->%s>\n",
                  logType::UNKNOWN_EVENT,
                  stdoutHandle,exception->ExceptionRecord.ExceptionAddress,
-                 sectionName.c_str(),
-                 moduleName.c_str()
+                 moduleName.c_str(),
+                 sectionName.c_str()
                 );
             return DBG_EXCEPTION_NOT_HANDLED;
         }
@@ -715,7 +775,6 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
 }
 bool debugger::parseSymbols (std::string filePath) // parse COFF symbols from PE reading it from disk
 {
-
     // UnDecorateSymbolName
 
     PEparser parser (filePath);
@@ -730,8 +789,28 @@ bool debugger::parseSymbols (std::string filePath) // parse COFF symbols from PE
         auto extendedNames = parser.getCoffExtendedNames();
         uint64_t coffExtendedNamesOffset = parser.getCoffExtendedNamesOffset();
         COFFsymbols = symbolParser.parseSymbols (parser.getCoffEntries (), extendedNames, coffExtendedNamesOffset, parser);
-        FILE * fw = fopen ("functions.txt", "wb");
 
+        std::vector <RUNTIME_FUNCTION> functionRanges = parser.getPdataEntries ();
+        if (functionRanges.size() == 0)
+        {
+            return true;
+        }
+
+        for (const auto & range : functionRanges)
+        {
+            if (COFFsymbols.find(range.BeginAddress) != COFFsymbols.end())
+            {
+                function newFunction;
+                newFunction.name = COFFsymbols[range.BeginAddress].name;
+                newFunction.start = range.BeginAddress + debuggedProcessBaseAddress;
+                newFunction.end = range.EndAddress + debuggedProcessBaseAddress;
+
+                functionNames.push_back (newFunction);
+                //printf ("%s ", COFFsymbols[range.BeginAddress].name.c_str());
+            }
+            
+            //printf ("%.16llx - %.16llx \n", debuggedProcessBaseAddress+range.BeginAddress, debuggedProcessBaseAddress+range.EndAddress);
+        }
         /*
         
         for ( auto const& [key, val] : COFFsymbols )
@@ -740,7 +819,7 @@ bool debugger::parseSymbols (std::string filePath) // parse COFF symbols from PE
             //printf ("%.16llx --> %s\n",key, val.c_str());
         }
         */
-        fclose (fw);
+
         return true;
     }
     return false;
@@ -759,8 +838,8 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
 
             EXIT_PROCESS_DEBUG_INFO * infoProc = &event->u.ExitProcess;
             log ("Process %u exited with code 0x%.08x\n", logType::INFO, stdoutHandle, event->dwProcessId, infoProc->dwExitCode);
-            SetEvent (commandEvent);
             *debuggingActive = false;
+            SetEvent (commandEvent);
             delete currentMemoryMap;
             delete memHelper;
             return DBG_CONTINUE;
