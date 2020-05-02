@@ -122,8 +122,6 @@ void debugger::showContext ()
 {
     CONTEXT lcContext = this->currentContext;
 
-    printf ("lcContext->RIP = %.16llx \n", lcContext.Rip);
-
     printf ("\n");
 
     DWORD flg = lcContext.EFlags;
@@ -669,7 +667,6 @@ void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception, std::string s
         bp->getIsOneHit() == 0 ? lastException.oneHitBreakpoint = 0 : lastException.oneHitBreakpoint = 1;
         if (bp->getIsOneHit())
         {
-            printf ("One hit \n");
             breakpoints.erase(std::remove(breakpoints.begin(), breakpoints.end(), *bp), breakpoints.end());
         }
         lastException.exceptionType = (DWORD) exception->ExceptionRecord.ExceptionCode;

@@ -233,11 +233,9 @@ uint64_t PEparser::fileOffsetToVirtualAddress (uint64_t fileOffset)
 	std::vector<IMAGE_SECTION_HEADER> sections = (virtualMode == 1 ? getSectionsVirtual () : getSectionsFile ());
 	for (int i = 0 ; i < sections.size(); i++)
 	{
-		printf ("i = %i, fileOffset %.08x PointerToRawData %.08x VirtualAddress %.08x SizeOfRawData %.08x \n", i, fileOffset, sections[i].PointerToRawData, sections[i].VirtualAddress, sections[i].SizeOfRawData );
 		if (fileOffset>= sections[i].PointerToRawData && fileOffset < (sections[i].PointerToRawData + sections[i].SizeOfRawData))
 		{
 			uint64_t virtualAddress = (fileOffset - sections[i].PointerToRawData) + (uint64_t) baseAddress + sections[i].VirtualAddress;
-			printf ("%.16llx \n", virtualAddress);
 			return virtualAddress;
 		}
 	}
