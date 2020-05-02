@@ -230,20 +230,20 @@ int parseStringToNumber (std::string toConvert, int base = 10)
 }
 void printHelp ()
 {
-    puts ("r, run - run or restart program\n");
     puts ("breakpoint, b, bp, br <hex address> - place int3 breakpoint\n");
     puts ("context - show context of current thread\n");
-    puts("disasm, disassembly <hex address> <count_decimal> - disassembly code at given address\n");
+    puts ("disasm, disassembly <hex address> <count_decimal> - disassembly code at given address\n");
     puts ("continue, c - continue execution of program\n");
     puts ("exit, e - exit from debugger\n");
     puts ("step in, si, s i - step in by single instruction\n");
-    puts ("next instruction, ni, n i - step by single instruction\n");
+    puts ("next instruction, ni, n i - go to next instruction\n");
     puts ("show breakpoints, bl, breakpoint list - show active breakpoints\n");
     puts ("breakpoint delete, bd, b delete <index/hex address> - delete breakpoint by index (obtained by bl) or address\n");
     puts ("memory mappings, vmmap, map - show map of whole virtual memory for this process\n");
     puts ("hexdump, hex, h <hex address> <size_decimal>\n");
     puts ("set register, sr <register name> <hex value> - sets specified register with given value\n");
-    puts ("write memory, wm <hex address> <size_decimal> <hex value>\n");
+    puts ("write memory, wm <hex address> <size_decimal> <hex value> - write value to memory\n");
+    puts ("backtrace, bt - show call stack of current thread");
 }
 void centerText (const char *text, int fieldWidth) 
 {
@@ -255,16 +255,23 @@ void centerTextColor (const char *text, int fieldWidth, DWORD color, HANDLE stdo
     WORD savedAttributes = getCurrentPromptColor (stdoutHandle);
     SetConsoleTextAttribute(stdoutHandle, color);
     int padLen = (fieldWidth - strlen(text)) / 2;
+    printf("%*s%s%*s", padLen, " " , text, (strlen(text) % 2 == 1 ? padLen + 1 : padLen), " ");
+
+    SetConsoleTextAttribute(stdoutHandle, savedAttributes);
+}
+void centerTextColorDecorate (const char *text, int fieldWidth, DWORD color, HANDLE stdoutHandle) 
+{
+    WORD savedAttributes = getCurrentPromptColor (stdoutHandle);
+    SetConsoleTextAttribute(stdoutHandle, color);
+    int padLen = (fieldWidth - strlen(text)) / 2;
 
     printf ("%.*s %s %.*s",
     padLen-1,
-    "========================================================",
+    "=============================================================================================",
     text,
     (strlen(text) % 2 == 1 ? padLen : padLen - 1),
-    "========================================================"
+    "============================================================================================="
     );
-
-    //printf("%*s%s%*s", padLen, a, text, (strlen(text) % 2 == 1 ? padLen + 1 : padLen), a);
     SetConsoleTextAttribute(stdoutHandle, savedAttributes);
 } 
 uint64_t alignMemoryPageSize (uint64_t size)

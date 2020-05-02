@@ -47,8 +47,10 @@ void * debugger::getNextInstructionAddress (void * ref)
     count = cs_disasm (handle, codeBuffer, 50 , (uint64_t) ref, 0, &insn);
     if (count >= 2)
     {  
+        void * toRet = (void *) insn[1].address;
+        cs_free (insn,count);
         delete codeBuffer;
-        return (void *) insn[1].address;
+        return toRet;
     }
     else
     {
@@ -120,6 +122,8 @@ void debugger::showContext ()
 {
     CONTEXT lcContext = this->currentContext;
 
+    printf ("lcContext->RIP = %.16llx \n", lcContext.Rip);
+
     printf ("\n");
 
     DWORD flg = lcContext.EFlags;
@@ -139,7 +143,7 @@ void debugger::showContext ()
     uint64_t displacement;
     SymInitialize(debuggedProcessHandle, NULL, TRUE ); // ?????? 
     char * buffer = new char [sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
-
+    memset (buffer, 0, sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR));
     PSYMBOL_INFO pSymbol = (PSYMBOL_INFO) buffer;
     pSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
     pSymbol->MaxNameLen = MAX_SYM_NAME;
@@ -154,7 +158,7 @@ void debugger::showContext ()
         (symbolNameSize > 0 ? pSymbol->Name : internalFuncName.c_str())
         );
 
-    delete buffer;
+    delete [] buffer;
 
     printf ("\n");
 
@@ -246,7 +250,7 @@ void debugger::showBreakpoints ()
     int j = 0;
     for (auto & i : breakpoints)
     {
-        log ("Breakpoint [%d] address %.16llx oneHit %d hitCount %d\n",logType::INFO, stdoutHandle, j, i.getAddress(), i.getIsOneHit(), stdoutHandle,  i.getHitCount());
+        log ("Breakpoint [%d] address %.16llx oneHit %d hitCount %d\n",logType::INFO, stdoutHandle, j, i.getAddress(), i.getIsOneHit(), i.getHitCount());
         j++;
     }
 }
@@ -517,14 +521,8 @@ void debugger::handleCommands(command * currentCommand)
     {
         if (debuggingActive)
         {
-            log ("The program is being debugged, running it again\n",logType::WARNING, stdoutHandle);
+            log ("The program is being debugged, exit and run it again\n",logType::WARNING, stdoutHandle);
         }
-        SetEvent (continueDebugEvent);
-        debuggingActive = false;
-        debuggerThread.join();
-        debuggingActive = true;
-        debuggerThread = std::thread(debugger::run, this, fileName);
-        commandModeActive = false;
     }
     else if (currentCommand->type == commandType::EXIT)
     {
@@ -669,6 +667,11 @@ void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception, std::string s
         }
         bp->getIsOneHit() == 0 ? currentContext.EFlags |= 0x100 : currentContext.EFlags &= ~0x100;
         bp->getIsOneHit() == 0 ? lastException.oneHitBreakpoint = 0 : lastException.oneHitBreakpoint = 1;
+        if (bp->getIsOneHit())
+        {
+            printf ("One hit \n");
+            breakpoints.erase(std::remove(breakpoints.begin(), breakpoints.end(), *bp), breakpoints.end());
+        }
         lastException.exceptionType = (DWORD) exception->ExceptionRecord.ExceptionCode;
         lastException.rip = breakpointAddress;
 
@@ -701,7 +704,7 @@ DWORD debugger::processCreateProcess (DEBUG_EVENT * event)
 
     breakpointEntryPoint (info);
 
-    delete modulePath;
+    delete [] modulePath;
     return DBG_CONTINUE;
 }
 DWORD debugger::processExceptions (DEBUG_EVENT * event)

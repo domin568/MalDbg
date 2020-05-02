@@ -78,14 +78,12 @@ class debugger
     	std::mutex m_debuggingActive;
     	std::mutex m_debuggerActive;
 
-        //std::map <uint64_t,uint8_t> breakpointsStolenBytes;
         std::vector <breakpoint> breakpoints;
         std::vector <memoryRegion> memoryRegions;
         std::vector <function> functionNames;
         std::set <DWORD> interruptingEvents;
         std::set <DWORD> interruptingExceptions;
         std::map <uint64_t, symbol> COFFsymbols;
-
 
     	DEBUG_EVENT currentDebugEvent;
 

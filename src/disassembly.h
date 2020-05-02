@@ -79,7 +79,7 @@ class disassembler
 			uint64_t,
 			uint32_t,
 			uint32_t,
-			size_t 
+			size_t &
 	 	);
 	 	void printLine (std::vector <breakpoint *> &, disassemblyLineInfo &);
 	 	void parseInstruction (cs_insn, disassemblyLineInfo &);

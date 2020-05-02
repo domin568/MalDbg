@@ -163,7 +163,7 @@ std::vector<IMAGE_SECTION_HEADER> PEparser::getSectionsVirtual ()
 		}	
 	}
 	std::vector <IMAGE_SECTION_HEADER> toRet (sections, sections + numberOfSections);
-	delete sections;
+	delete [] sections;
 	return toRet;
 }
 
@@ -187,7 +187,7 @@ std::vector<IMAGE_SECTION_HEADER> PEparser::getSectionsFile ()
 	{
 		toRet.push_back (sections[i]);
 	}
-	delete sections;
+	delete [] sections;
 	return toRet;
 }
 
@@ -320,7 +320,7 @@ std::vector <COFFentry> PEparser::getCoffEntries ()
 	}
 
 	std::vector <COFFentry> toRet (entires, entires + quantinity);
-	delete entires;
+	delete [] entires;
 	return toRet;
 }
 uint64_t PEparser::getCoffExtendedNamesOffset ()

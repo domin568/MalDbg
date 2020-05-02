@@ -71,5 +71,6 @@ int parseStringToNumber (std::string, int);
 void printHelp ();
 void centerText(const char *, int);
 void centerTextColor (const char *, int , DWORD, HANDLE); 
+void centerTextColorDecorate (const char *, int, DWORD, HANDLE );
 uint64_t alignMemoryPageSize (uint64_t);
 std::string intToHex( uint64_t i );

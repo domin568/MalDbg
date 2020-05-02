@@ -28,5 +28,6 @@ class breakpoint
 		breakpointType getType () { return type; }
 		bool getIsOneHit () { return isOneHit; }
 		uint64_t getHitCount () { return hitCount; } 
+		bool operator== (const breakpoint & other);
 
 };

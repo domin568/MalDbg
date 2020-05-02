@@ -5,10 +5,19 @@ breakpoint::breakpoint (void * address, breakpointType type, bool isOneHit)
 	this->type = type;
 	this->address = address;
 	this->isOneHit = isOneHit;
+    hitCount = 0;
 }
 void breakpoint::incrementHitCount ()
 {
 	hitCount++;
+}
+bool breakpoint::operator== (const breakpoint & other)
+{
+    if ((uint64_t) address == (uint64_t) other.address && type == other.type)
+    {
+        return true;
+    }
+    return false;
 }
 bool breakpoint::set (HANDLE procHandle)
 {

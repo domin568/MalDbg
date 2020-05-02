@@ -172,7 +172,6 @@ void memoryMap::updateMemoryMap ()
 					memRegion.type = typeForAddr (memRegion.start);
 					memRegion.state = stateForAddr (memRegion.start);
 					regions.push_back (memRegion);
-					//printf ("%s\n", memRegion.toString().c_str());
           		}
           		baseRegion.memRegions.clear();
           		baseRegion.memRegions = regions;
@@ -338,6 +337,7 @@ std::vector <moduleData> memoryMap::getModulesLoaded ()
             throw std::exception ();
         }
         PWSTR dllName = (PWSTR) new uint8_t [currentModule.BaseDllName.Length];
+
         if (!ReadProcessMemory (processHandle, (LPVOID) currentModule.BaseDllName._Buffer, dllName, currentModule.BaseDllName.Length, NULL))
         {
             log ("Cannot read UNICODE_STRING dllName \n", logType::ERR, stdoutHandle);
@@ -362,6 +362,7 @@ std::vector <moduleData> memoryMap::getModulesLoaded ()
                 break;
             }
             PWSTR dllN = (PWSTR) new uint8_t [currentModule.BaseDllName.Length];
+
             if (!ReadProcessMemory (processHandle, (LPVOID) currentModule.BaseDllName._Buffer, dllN, currentModule.BaseDllName.Length, NULL))
             {
                 log ("Cannot read UNICODE_STRING dllName \n", logType::ERR, stdoutHandle);
@@ -446,7 +447,7 @@ bool memoryHelper::printHexdump (void * address, uint32_t size)
 		printf ("\n");
 		bytesLeft -= hexdumpWidth;
 	}
-	delete b;
+	delete [] b;
 }
 bool memoryHelper::writeIntAt (uint64_t value, void * addr, uint32_t size)
 {

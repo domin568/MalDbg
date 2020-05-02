@@ -43,7 +43,7 @@ void disassembler::changeBreakpointsToOriginal (
 	uint64_t address,
 	uint32_t codeSize,
 	uint32_t numberOfInstructions,
-	size_t count
+	size_t & count
 	 )
 {
 	for (int j = 0; j < (numberOfInstructions >= count ? count : numberOfInstructions); j++) // iterate over all instructions disassembled to find breakpoint locations
@@ -59,7 +59,7 @@ void disassembler::changeBreakpointsToOriginal (
             {
                 size_t int3Offset = (*insn)[j].address - (uint64_t) address;
                 codeBuffer [int3Offset] = bp->getOriginalByte();
-                //cs_free (*insn, count);
+                cs_free (*insn, count);
                 count = cs_disasm (handle, codeBuffer, codeSize , (uint64_t) address, 0, insn); // disassembly again
             }
         }
@@ -113,13 +113,13 @@ void disassembler::parseInstruction (cs_insn insn, disassemblyLineInfo & lineInf
 
 	if (start.size() > 0)
     {
-        centerTextColor (start.c_str(), 60, 15, stdoutHandle);
+        centerTextColorDecorate (start.c_str(), 60, 15, stdoutHandle);
         printf ("\n\n");
     }
     else if (end.size() > 0)
     {
         std::string toWrite = "end " + end;
-        centerTextColor (toWrite.c_str(), 60, 15, stdoutHandle);
+        centerTextColorDecorate (toWrite.c_str(), 60, 15, stdoutHandle);
         printf ("\n\n");   
     }
 	cs_detail *detail = insn.detail;
@@ -195,36 +195,6 @@ void disassembler::parseInstruction (cs_insn insn, disassemblyLineInfo & lineInf
             }
     	}	
     }
-    	/*
-        for (int n = 0; n < detail->x86.op_count; n++) 
-    	{
-        	cs_x86_op *op = &(detail->x86.operands[n]);
-        	switch(op->type) 
-        	{
-            	case X86_OP_REG:
-            	{
-            		printf("operands[%u].type: REG = %s\n", n, cs_reg_name(handle, op->reg));
-            		break;
-            	}
-            	case X86_OP_IMM:
-            	{
-            		printf("operands[%u].type: IMM = %.16llx\n", n, op->imm);
-            		break;
-            	}
-            	case X86_OP_MEM:
-            	{
-                	if (op->mem.base != X86_OP_INVALID)
-               		printf("operands[%u].mem.base: REG = %s\n", n, cs_reg_name(handle, op->mem.base));
-                	if (op->mem.index != X86_OP_INVALID)
-                	printf("operands[%u].mem.index: REG = %s\n", n, cs_reg_name(handle, op->mem.index));
-                	if (op->mem.disp != 0)
-                	printf("operands[%u].mem.disp: 0x%x\n", n, op->mem.disp);
-                	break;
-            	}
-            
-        	}
-    	}
-    	*/
     lineInfo.op.str = std::string (insn.op_str); // id any symbol applies then leave it as it is
     lineInfo.op.color = defaultColor;
 }
@@ -274,8 +244,6 @@ void disassembler::disasm (uint64_t address, uint8_t * codeBuffer, uint32_t code
 
         for (int j = 0 ; j < (numberOfInstructions >= count ? count : numberOfInstructions); j++) // main print loop
         {
-            // X86_REL_ADDR macro
-
             disassemblyLineInfo line;
             parseInstruction (insn[j], line);
             printLine (disassembledBreakpoints, line);
@@ -284,7 +252,7 @@ void disassembler::disasm (uint64_t address, uint8_t * codeBuffer, uint32_t code
     }
     else
     {
-        log ("Cannot disassembly memory at %.16llx\n",logType::ERR, stdoutHandle,  address);
+        log ("Cannot disassembly memory at %.16llx\n",logType::ERR, stdoutHandle, address);
     }
 }
 std::string disassembler::getFunctionNameStartForAddress (uint64_t address)
