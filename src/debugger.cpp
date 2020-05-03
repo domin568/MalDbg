@@ -606,7 +606,7 @@ void debugger::placeSoftwareBreakpoint (void * address, bool oneHit)
     breakpoint newBreakpoint (address, breakpointType::SOFTWARE_TYPE, oneHit);
     if (!newBreakpoint.set (debuggedProcessHandle))
     {
-        log ("Cannot set breakpoint at %.16llx\n",logType::ERR,address, stdoutHandle,  address);
+        log ("Cannot set breakpoint at %.16llx\n",logType::ERR,address, address);
     }
     else
     {
