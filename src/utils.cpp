@@ -212,7 +212,7 @@ command * parseCommand (std::string c)
 void* parseStringToAddress (std::string toConvert)
 {
     void * address;
-    sscanf (toConvert.c_str(),"%x", &address);
+    sscanf (toConvert.c_str(),"%llx", &address);
     return address;
 }
 int parseStringToNumber (std::string toConvert, int base = 10)
@@ -220,11 +220,11 @@ int parseStringToNumber (std::string toConvert, int base = 10)
     int number;
     if (base == 10)
     {
-        sscanf (toConvert.c_str(), "%i", &number);
+        sscanf (toConvert.c_str(), "%lli", &number);
     }
     else if (base == 16)
     {
-        sscanf (toConvert.c_str(), "%x", &number);
+        sscanf (toConvert.c_str(), "%llx", &number);
     }
     return number;
 }
