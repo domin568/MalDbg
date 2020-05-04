@@ -59,8 +59,9 @@ class memoryMap
 		HANDLE processHandle;
 		HANDLE stdoutHandle;
 		std::vector <baseRegion> baseRegions;
-		void setProtectStateType (MEMORY_BASIC_INFORMATION mbi, memoryRegion *);
 		int wow64;
+
+		void setProtectStateType (MEMORY_BASIC_INFORMATION mbi, memoryRegion *);
 		DWORD memoryProtectionToDWORD (memoryProtection);
 		std::vector <moduleData> getModulesLoaded ();
 		std::string stateForAddr (uint64_t);
@@ -74,6 +75,7 @@ class memoryMap
 		std::string getSectionNameForAddress (uint64_t);
 		std::string getImageNameForAddress (uint64_t);
 		memoryProtection protectionForAddr (uint64_t addr);
+		std::vector <uint64_t> getModulesAddr ();
 
 };
 

@@ -179,6 +179,17 @@ void memoryMap::updateMemoryMap ()
 		}
 	}
 }
+std::vector <uint64_t> memoryMap::getModulesAddr ()
+{
+	std::vector <uint64_t> toRet;
+	std::vector <moduleData> modules = getModulesLoaded ();
+
+	for (auto i : modules)
+	{
+		toRet.push_back (i.VAaddress);
+	}
+	return toRet;
+}
 void memoryMap::showMemoryMap ()
 {
 	printf ("|    Address     |      Size      |        Name        |  State | Type | Prot |\n");

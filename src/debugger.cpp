@@ -478,6 +478,18 @@ void debugger::handleCommands(command * currentCommand)
     {
         currentMemoryMap->updateMemoryMap ();
         currentMemoryMap->showMemoryMap ();
+
+        /*
+        std::vector <uint64_t> moduleBases = currentMemoryMap->getModulesAddr ();
+        PEparser p (debuggedProcessHandle, moduleBases[1]);
+        p.parseExportFunctionsVirtual ();
+        
+        for (const auto & i : moduleBases)
+        {
+            PEparser p (debuggedProcessHandle, i);
+            p.parseExportFunctionsVirtual ();
+        } 
+        */
     }
     else if (currentCommand->type == commandType::SET_REGISTER && debuggingActive)
     {

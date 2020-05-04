@@ -408,3 +408,60 @@ std::vector <RUNTIME_FUNCTION> PEparser::getPdataEntries ()
 	}
 	return pdataEntries;
 }
+void PEparser::parseExportFunctionsVirtual ()
+{
+	if (!virtualMode) 
+	{
+		return; 
+	}
+
+	IMAGE_DATA_DIRECTORY dataDirectory = ((IMAGE_NT_HEADERS64 *) ntHeaders)->OptionalHeader.DataDirectory[0];
+	if (dataDirectory.VirtualAddress == 0)
+	{
+		return; // PE has no export table
+	}
+
+	uint64_t address = (uint64_t) baseAddress + dataDirectory.VirtualAddress;
+	uint32_t size = dataDirectory.Size;
+
+	uint8_t * exportData = new uint8_t [size];
+
+	if (!ReadProcessMemory (processHandle, (LPCVOID) address, exportData, size, NULL ))
+	{
+		log ("Cannot read Export Data\n", logType::ERR, stdoutHandle);
+		return;
+	}
+
+	uint32_t functionNumber = ((IMAGE_EXPORT_DIRECTORY *)exportData)->NumberOfFunctions;
+	uint32_t nameNumber = ((IMAGE_EXPORT_DIRECTORY *)exportData)->NumberOfNames;
+
+	uint32_t functionAddressesOffset = ((IMAGE_EXPORT_DIRECTORY *)exportData)->AddressOfFunctions - dataDirectory.VirtualAddress;
+	uint32_t functionNamesOffset = ((IMAGE_EXPORT_DIRECTORY *)exportData)->AddressOfNames - dataDirectory.VirtualAddress;
+	uint32_t functionOrdinalsOffset = ((IMAGE_EXPORT_DIRECTORY *)exportData)->AddressOfNameOrdinals - dataDirectory.VirtualAddress;
+	
+	int i = functionAddressesOffset;
+	int j = functionNamesOffset;
+	int k = functionOrdinalsOffset;
+	uint32_t base = ((IMAGE_EXPORT_DIRECTORY *)exportData)->Base;
+	int l = ((IMAGE_EXPORT_DIRECTORY *)exportData)->Base;
+
+	uint32_t functionAddressesEndOffset = (functionNumber * sizeof (uint32_t) + functionAddressesOffset);
+
+	for (;i < functionAddressesEndOffset ; i += sizeof (uint32_t))
+	{
+		uint64_t addr = *((uint32_t *)(exportData + i)) + (uint64_t) baseAddress;
+
+		uint32_t nameOffset = (*((uint32_t *)(exportData + j)) - dataDirectory.VirtualAddress);
+		char * name = (char *)((uint32_t) nameOffset + (uint64_t) exportData);
+		uint16_t ordinalToName = *((uint32_t *)(exportData + k));
+
+		printf ("%.16llx --> %s ordinal [%i] ordinalToFunc [%i]\n", addr, ((ordinalToName + base) == l ? name : "Ordinal Only"), l, ordinalToName);
+		if (ordinalToName + base == l)
+		{
+			j+= sizeof (uint32_t);
+			k+= sizeof (uint16_t);
+		}
+		l++;
+	}
+
+}
