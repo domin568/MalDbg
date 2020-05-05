@@ -50,7 +50,9 @@ class debugger
         bool deleteBreakpointByAddress (void *);
         bool deleteBreakpointByIndex (uint64_t);
         void setRegisterWithValue (std::string, uint64_t);
+
         bool parseSymbols (std::string);
+        void parseFunctionNamesIAT ();
         std::string getFunctionNameForAddress (uint64_t address);
         void showBacktrace ();
         
@@ -74,6 +76,8 @@ class debugger
         bool interactiveMode = false;
         bool commandModeActive = false;
         bool bypassInterruptOnce = false;
+        bool coffSymbolsLoaded = true;
+        bool systemBreakpoint = true;
 
     	std::mutex m_debuggingActive;
     	std::mutex m_debuggerActive;

@@ -24,8 +24,6 @@ PEparser::PEparser (std::string exePath) // ON DISK
 	PEheaderAddr = (void *) getPEstructureFile ();
 	checkArchFile ();
 	readPEheaderFile ();	
-	
-	//fread ();
 }
 
 /* GET PE STRUCTURE */
@@ -408,36 +406,129 @@ std::vector <RUNTIME_FUNCTION> PEparser::getPdataEntries ()
 	}
 	return pdataEntries;
 }
+uint8_t * PEparser::readDataFromDirectory (uint32_t index, uint64_t & address, uint32_t & size)
+{
+	uint32_t directoryCount = ((IMAGE_NT_HEADERS64 *) ntHeaders)->OptionalHeader.NumberOfRvaAndSizes;
+	if (index < 0 && index < directoryCount)
+	{
+		log ("Directory index invalid \n", logType::ERR, stdoutHandle);
+		return NULL;
+	}
+
+	IMAGE_DATA_DIRECTORY dataDirectory = ((IMAGE_NT_HEADERS64 *) ntHeaders)->OptionalHeader.DataDirectory[index];
+	if (dataDirectory.VirtualAddress == 0)
+	{
+		log ("Directory nr %i is not used \n", logType::ERR, stdoutHandle, index);
+		return NULL; // PE has no import table ???
+	}
+
+	address = (uint64_t) baseAddress + dataDirectory.VirtualAddress;
+	size = dataDirectory.Size;
+
+	uint8_t * data = new uint8_t [size];
+
+	if (!ReadProcessMemory (processHandle, (LPCVOID) address, data, size, NULL ))
+	{
+		log ("Cannot read Import Data\n", logType::ERR, stdoutHandle);
+		return nullptr;
+	}
+	return data;
+}
+uint8_t * PEparser::getPEMemory ()
+{
+	if (!virtualMode)
+	{
+		log ("Cannot get PE memory from file \n", logType::UNKNOWN_EVENT, stdoutHandle);
+		return nullptr;
+	}
+	uint64_t PEsize = getPESizeInMemory();
+	uint8_t * PE = new uint8_t [PEsize];
+	if (!ReadProcessMemory (processHandle, (LPCVOID) baseAddress, PE, PEsize, NULL ))
+	{
+		log ("Cannot read whole PE memory \n", logType::ERR, stdoutHandle);
+		return nullptr;
+	}
+	return PE;
+}
+uint64_t PEparser::getPESizeInMemory ()
+{
+	if (!virtualMode)
+	{
+		return 0;
+	}
+	uint64_t toRet = ((IMAGE_NT_HEADERS64 *) ntHeaders)->OptionalHeader.SectionAlignment; // for first page of memory (headers)
+	std::vector<IMAGE_SECTION_HEADER> sections = getSectionsVirtual ();
+	for (const auto & i : sections)
+	{
+		toRet += alignMemoryPageSize(i.Misc.VirtualSize);
+	}
+	return toRet;
+}
+std::map <std::string, std::vector<uint64_t> > PEparser::getFunctionAddressesFromIAT ()
+{
+	std::map <std::string, std::vector<uint64_t> > toRet;
+
+	if (!virtualMode) 
+	{
+		log ("Cannot parse import names from file \n", logType::UNKNOWN_EVENT, stdoutHandle);
+		return toRet; 
+	}
+	uint8_t * PEmemory = getPEMemory ();
+	if (PEmemory == nullptr)
+	{
+		return toRet;
+	}
+
+	uint64_t address;
+	uint32_t size;
+	uint8_t * importData = readDataFromDirectory (IMAGE_DIRECTORY_ENTRY_IMPORT, address, size);
+	if (importData == NULL)
+	{
+		return toRet;
+	}
+
+	IMAGE_IMPORT_DESCRIPTOR * dllImported = (IMAGE_IMPORT_DESCRIPTOR *) importData;
+
+	for (int i = 0; dllImported[i].Name != 0; i++)
+	{
+		uint32_t nameOffset = dllImported[i].Name;
+		const char * moduleName = (const char *) (PEmemory + nameOffset);
+		std::string moduleNameStr (moduleName);
+
+		uint32_t IAToffset = dllImported[i].FirstThunk;
+		uint64_t * IATpointer = (uint64_t *) (IAToffset + (uint64_t) PEmemory);
+
+		for (int j = 0; IATpointer[j] != 0; j++)
+		{
+			toRet[moduleNameStr].push_back (IATpointer[j]);
+		}
+	}
+
+	delete [] importData;
+	delete [] PEmemory;
+	return toRet;
+}
 void PEparser::parseExportFunctionsVirtual ()
 {
 	if (!virtualMode) 
 	{
+		log ("Cannot parse export names from file \n", logType::UNKNOWN_EVENT, stdoutHandle);
 		return; 
 	}
-
-	IMAGE_DATA_DIRECTORY dataDirectory = ((IMAGE_NT_HEADERS64 *) ntHeaders)->OptionalHeader.DataDirectory[0];
-	if (dataDirectory.VirtualAddress == 0)
+	uint64_t address;
+	uint32_t size;
+	uint8_t * exportData = readDataFromDirectory (IMAGE_DIRECTORY_ENTRY_EXPORT, address, size);
+	if (exportData == NULL)
 	{
-		return; // PE has no export table
-	}
-
-	uint64_t address = (uint64_t) baseAddress + dataDirectory.VirtualAddress;
-	uint32_t size = dataDirectory.Size;
-
-	uint8_t * exportData = new uint8_t [size];
-
-	if (!ReadProcessMemory (processHandle, (LPCVOID) address, exportData, size, NULL ))
-	{
-		log ("Cannot read Export Data\n", logType::ERR, stdoutHandle);
 		return;
 	}
 
 	uint32_t functionNumber = ((IMAGE_EXPORT_DIRECTORY *)exportData)->NumberOfFunctions;
 	uint32_t nameNumber = ((IMAGE_EXPORT_DIRECTORY *)exportData)->NumberOfNames;
 
-	uint32_t functionAddressesOffset = ((IMAGE_EXPORT_DIRECTORY *)exportData)->AddressOfFunctions - dataDirectory.VirtualAddress;
-	uint32_t functionNamesOffset = ((IMAGE_EXPORT_DIRECTORY *)exportData)->AddressOfNames - dataDirectory.VirtualAddress;
-	uint32_t functionOrdinalsOffset = ((IMAGE_EXPORT_DIRECTORY *)exportData)->AddressOfNameOrdinals - dataDirectory.VirtualAddress;
+	uint32_t functionAddressesOffset = ((IMAGE_EXPORT_DIRECTORY *)exportData)->AddressOfFunctions - (address - (uint64_t) baseAddress);
+	uint32_t functionNamesOffset = ((IMAGE_EXPORT_DIRECTORY *)exportData)->AddressOfNames - (address - (uint64_t) baseAddress);
+	uint32_t functionOrdinalsOffset = ((IMAGE_EXPORT_DIRECTORY *)exportData)->AddressOfNameOrdinals - (address - (uint64_t) baseAddress);
 	
 	int i = functionAddressesOffset;
 	int j = functionNamesOffset;
@@ -454,7 +545,7 @@ void PEparser::parseExportFunctionsVirtual ()
 
 		// if func pointer points into export data then it is forwarded
 
-		uint32_t nameOffset = (*((uint32_t *)(exportData + j)) - dataDirectory.VirtualAddress);
+		uint32_t nameOffset = (*((uint32_t *)(exportData + j)) - (address - (uint64_t) baseAddress));
 		char * name = (char *)((uint32_t) nameOffset + (uint64_t) exportData);
 		uint16_t ordinalToName = *((uint32_t *)(exportData + k));
 
@@ -473,5 +564,5 @@ void PEparser::parseExportFunctionsVirtual ()
 		}
 		l++;
 	}
-
+	delete [] exportData;
 }

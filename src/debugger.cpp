@@ -480,12 +480,14 @@ void debugger::handleCommands(command * currentCommand)
         currentMemoryMap->showMemoryMap ();
 
         /*
+        std::vector <uint64_t> moduleBases = currentMemoryMap->getModulesAddr ();
         for (const auto & i : moduleBases)
         {
             PEparser p (debuggedProcessHandle, i);
             p.parseExportFunctionsVirtual ();
         } 
         */
+        
     }
     else if (currentCommand->type == commandType::SET_REGISTER && debuggingActive)
     {
@@ -682,10 +684,25 @@ void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception, std::string s
 
         this->currentContext.Rip--; // int3 already consumed, need to revert execution state
     }
-    else // system breakpoint
+    else if (systemBreakpoint) // system breakpoint
     {
+        systemBreakpoint = false; // only once at the beggining
         log ("System breakpoint reached at 0x%.16llx <%s->%s>\n", logType::INFO, stdoutHandle, breakpointAddress, moduleName.c_str(), sectionName.c_str());
+        if (!coffSymbolsLoaded)
+        {
+            log ("Parsing function names by IAT\n", logType::INFO, stdoutHandle);
+            parseFunctionNamesIAT ();
+        }
     }    
+}
+void debugger::parseFunctionNamesIAT ()
+{
+    PEparser parser (debuggedProcessHandle, debuggedProcessBaseAddress);
+    std::map <std::string, std::vector<uint64_t> > functionsImported = parser.getFunctionAddressesFromIAT ();
+    if (functionsImported.size() == 0)
+    {
+        log ("Could not parse function names by IAT properly\n", logType::INFO, stdoutHandle);
+    }
 }
 DWORD debugger::processCreateProcess (DEBUG_EVENT * event)
 {
@@ -701,8 +718,11 @@ DWORD debugger::processCreateProcess (DEBUG_EVENT * event)
     
     if (!parseSymbols (moduleNameString))
     {
+        log ("No symbols loaded, trying to load function imports by IAT when it is resolved\n", logType::INFO, stdoutHandle);
+        coffSymbolsLoaded = false;
         // parse IAT names
     }
+    
     PEparser parser (moduleNameString);
     std::string entrypointSectionName = parser.getSectionNameForAddress ((uint64_t)info->lpStartAddress - (uint64_t)info->lpBaseOfImage); 
     log ("%s loaded, base 0x%.16llx entrypoint 0x%.16llx <%.8s>\n",logType::INFO, stdoutHandle, moduleName, info->lpBaseOfImage, info->lpStartAddress, entrypointSectionName.c_str());

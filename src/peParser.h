@@ -48,6 +48,10 @@ class PEparser
 	
 	bool isAddrInSection (uint64_t, IMAGE_SECTION_HEADER *);
 	IMAGE_SECTION_HEADER getEntryPointSection ();
+
+	uint8_t * readDataFromDirectory (uint32_t, uint64_t &, uint32_t &);
+	uint64_t getPESizeInMemory ();
+	uint8_t * getPEMemory ();
 	
 	public:
 	PEparser (HANDLE, uint64_t); // in virtual memory
@@ -70,4 +74,5 @@ class PEparser
 	std::vector <RUNTIME_FUNCTION> getPdataEntries ();
 
 	void parseExportFunctionsVirtual ();
+	std::map <std::string, std::vector<uint64_t> > getFunctionAddressesFromIAT ();
 };
