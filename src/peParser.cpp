@@ -449,13 +449,23 @@ void PEparser::parseExportFunctionsVirtual ()
 
 	for (;i < functionAddressesEndOffset ; i += sizeof (uint32_t))
 	{
+		bool isForwared = false;
 		uint64_t addr = *((uint32_t *)(exportData + i)) + (uint64_t) baseAddress;
+
+		// if func pointer points into export data then it is forwarded
 
 		uint32_t nameOffset = (*((uint32_t *)(exportData + j)) - dataDirectory.VirtualAddress);
 		char * name = (char *)((uint32_t) nameOffset + (uint64_t) exportData);
 		uint16_t ordinalToName = *((uint32_t *)(exportData + k));
 
-		printf ("%.16llx --> %s ordinal [%i] ordinalToFunc [%i]\n", addr, ((ordinalToName + base) == l ? name : "Ordinal Only"), l, ordinalToName);
+		if ( (addr - (uint64_t) baseAddress) >= (address - (uint64_t) baseAddress) &&
+			 (addr - (uint64_t) baseAddress) < (address + size - (uint64_t) baseAddress)) 
+		{
+			isForwared = true;
+			printf ("Ordinal [%i] forwarded to %s \n", ordinalToName + base, (char *) addr );
+		}
+
+		printf ("%.16llx --> %s ordinal [%i] \n", addr, ((ordinalToName + base) == l ? name : "Ordinal Only"), l);
 		if (ordinalToName + base == l)
 		{
 			j+= sizeof (uint32_t);
