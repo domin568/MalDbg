@@ -477,11 +477,8 @@ void debugger::handleCommands(command * currentCommand)
     else if (currentCommand->type == commandType::SHOW_MEMORY_REGIONS && debuggingActive)
     {
         currentMemoryMap->updateMemoryMap ();
-        //currentMemoryMap->showMemoryMap ();
+        currentMemoryMap->showMemoryMap ();
 
-        std::vector <uint64_t> moduleBases = currentMemoryMap->getModulesAddr ();
-        PEparser p (debuggedProcessHandle, moduleBases[5]);
-        p.parseExportFunctionsVirtual ();
         /*
         for (const auto & i : moduleBases)
         {
