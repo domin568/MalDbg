@@ -169,7 +169,7 @@ void debugger::breakpointEntryPoint (CREATE_PROCESS_DEBUG_INFO * info)
 {
     uint64_t entryRVA = (uint64_t) info->lpStartAddress - (uint64_t) info->lpBaseOfImage;
     uint64_t entryVA = (uint64_t) info->lpBaseOfImage + (uint64_t) entryRVA;
-    placeSoftwareBreakpoint ((void *) entryVA, false);
+    placeSoftwareBreakpoint ((void *) entryVA, false, false);
 }
 void debugger::checkInterruptEvent ()
 {
@@ -248,8 +248,11 @@ void debugger::showBreakpoints ()
     int j = 0;
     for (auto & i : breakpoints)
     {
-        log ("Breakpoint [%d] address %.16llx oneHit %d hitCount %d\n",logType::INFO, stdoutHandle, j, i.getAddress(), i.getIsOneHit(), i.getHitCount());
-        j++;
+        if (!i.isApiLog())
+        {
+            log ("Breakpoint [%d] address %.16llx oneHit %d hitCount %d\n",logType::INFO, stdoutHandle, j, i.getAddress(), i.getIsOneHit(), i.getHitCount());
+            j++;
+        }
     }
 }
 bool debugger::deleteBreakpointByAddress (void * address)
@@ -465,7 +468,7 @@ void debugger::handleCommands(command * currentCommand)
     else if (currentCommand->type == commandType::SOFT_BREAKPOINT && debuggingActive)
     {
         void * breakpointAddress = parseStringToAddress(currentCommand->arguments[0].arg);
-        placeSoftwareBreakpoint (breakpointAddress, false);
+        placeSoftwareBreakpoint (breakpointAddress, false, false);
     }
     else if (currentCommand->type == commandType::WRITE_MEMORY_INT && debuggerActive)
     {
@@ -556,7 +559,7 @@ void debugger::handleCommands(command * currentCommand)
         void * addr = getNextInstructionAddress ( (void *) currentContext.Rip);
         if (addr)
         {
-            placeSoftwareBreakpoint (addr, true);
+            placeSoftwareBreakpoint (addr, true, false);
         }
         else
         {
@@ -568,6 +571,25 @@ void debugger::handleCommands(command * currentCommand)
     else if (currentCommand->type == commandType::CONTEXT && debuggingActive)
     {
         showContext ();
+    }
+    else if (currentCommand->type == commandType::APILOG && debuggingActive)
+    {
+        std::vector <uint64_t> moduleBases = currentMemoryMap->getModulesAddr ();
+        uint64_t sizeMemTrampoline = 0;
+        std::vector < std::map <uint64_t, std::string> > modulesExports;
+        for (const auto & i : moduleBases)
+        {
+            PEparser p (debuggedProcessHandle, i);
+            modulesExports.push_back(p.parseExportFunctionsVirtual ());
+            sizeMemTrampoline += modulesExports.back().size() * 8;
+        }
+        for (const auto & moduleExports : modulesExports)
+        {
+            for(auto const & [addr, name] : moduleExports)
+            {
+                placeSoftwareBreakpoint ( (void *) addr, false, true);
+            }
+        }
     }
 }
 void debugger::interactiveCommands ()
@@ -611,9 +633,9 @@ void debugger::interactive ()
     }
     interactiveMode = false;
 }
-void debugger::placeSoftwareBreakpoint (void * address, bool oneHit)
+void debugger::placeSoftwareBreakpoint (void * address, bool oneHit, bool apiLog)
 {
-    breakpoint newBreakpoint (address, breakpointType::SOFTWARE_TYPE, oneHit);
+    breakpoint newBreakpoint (address, breakpointType::SOFTWARE_TYPE, oneHit, apiLog);
     if (!newBreakpoint.set (debuggedProcessHandle))
     {
         log ("Cannot set breakpoint at %.16llx\n",logType::ERR,address, address);
@@ -932,7 +954,7 @@ void debugger::addSoftBreakpoint (void * address)
     if (!interactiveMode)
     {
         WaitForSingleObject (commandEvent,INFINITE);
-        placeSoftwareBreakpoint (address, false);
+        placeSoftwareBreakpoint (address, false, false);
     }
 }
 void debugger::continueExecution ()

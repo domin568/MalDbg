@@ -41,6 +41,7 @@ enum class commandType
     WRITE_MEMORY_INT = 16,
     HELP = 17,
     BACKTRACE = 18,
+    APILOG = 19,
     UNKNOWN = 0xFF
 };
 

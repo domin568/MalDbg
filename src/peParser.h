@@ -73,6 +73,6 @@ class PEparser
 	uint64_t fileOffsetToVirtualAddress (uint64_t); 
 	std::vector <RUNTIME_FUNCTION> getPdataEntries ();
 
-	void parseExportFunctionsVirtual ();
+	std::map <uint64_t, std::string> parseExportFunctionsVirtual ();
 	std::map <std::string, std::vector<uint64_t> > getFunctionAddressesFromIAT ();
 };

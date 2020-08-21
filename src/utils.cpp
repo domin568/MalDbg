@@ -96,6 +96,7 @@ command * parseCommand (std::string c)
     std::regex writeMemoryRegex ("^(wm|write memory)\\s+((0x)([0-9a-fA-F]+))\\s+([0-9]+)\\s+((0x)?([0-9a-fA-F]+))");
     std::regex helpRegex ("^help\\s*$");
     std::regex backtraceRegex ("^(bt|backtrace)\\s*$");
+    std::regex apilogRegex ("^(apilog)\\s+(\\S+)$");
     std::smatch match;
 
     if (std::regex_search(c, match, helpRegex))
@@ -195,6 +196,12 @@ command * parseCommand (std::string c)
         comm->type = commandType::HEXDUMP;
         comm->arguments.push_back ( {argumentType::ADDRESS, match[2].str()} );
         comm->arguments.push_back ( {argumentType::NUMBER, match[3].str()} );
+        return comm;
+    }
+    else if (std::regex_match (c, match, apilogRegex))
+    {
+        comm->type = commandType::APILOG;
+        comm->arguments.push_back ( {argumentType::STRING, match[2].str()} );
         return comm;
     }
 

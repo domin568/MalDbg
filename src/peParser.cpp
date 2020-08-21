@@ -508,19 +508,20 @@ std::map <std::string, std::vector<uint64_t> > PEparser::getFunctionAddressesFro
 	delete [] PEmemory;
 	return toRet;
 }
-void PEparser::parseExportFunctionsVirtual ()
+std::map <uint64_t, std::string> PEparser::parseExportFunctionsVirtual ()
 {
+	std::map <uint64_t, std::string> toRet;
 	if (!virtualMode) 
 	{
 		log ("Cannot parse export names from file \n", logType::UNKNOWN_EVENT, stdoutHandle);
-		return; 
+		return toRet; 
 	}
 	uint64_t address;
 	uint32_t size;
 	uint8_t * exportData = readDataFromDirectory (IMAGE_DIRECTORY_ENTRY_EXPORT, address, size);
 	if (exportData == NULL)
 	{
-		return;
+		return toRet;
 	}
 
 	uint32_t functionNumber = ((IMAGE_EXPORT_DIRECTORY *)exportData)->NumberOfFunctions;
@@ -553,10 +554,13 @@ void PEparser::parseExportFunctionsVirtual ()
 			 (addr - (uint64_t) baseAddress) < (address + size - (uint64_t) baseAddress)) 
 		{
 			isForwared = true;
-			printf ("Ordinal [%i] forwarded to %s \n", ordinalToName + base, (char *) addr );
+			//printf ("Ordinal [%i] forwarded to %s \n", ordinalToName + base, (char *) addr );
+			// TODOOOOOOOOOOOOOOOOOOOOOOOOO
+			toRet[addr] = ""; //std::string ( (char *) addr ); 
+			// TODOOOOOOOOOOOOOOOOOOOOOOOOO segfault when normal string
 		}
-
-		printf ("%.16llx --> %s ordinal [%i] \n", addr, ((ordinalToName + base) == l ? name : "Ordinal Only"), l);
+		toRet[addr] = ((ordinalToName + base) == l ? std::string(name) : "Ordinal Only");
+		//printf ("%.16llx --> %s ordinal [%i] \n", addr, ((ordinalToName + base) == l ? name : "Ordinal Only"), l);
 		if (ordinalToName + base == l)
 		{
 			j+= sizeof (uint32_t);
@@ -565,4 +569,5 @@ void PEparser::parseExportFunctionsVirtual ()
 		l++;
 	}
 	delete [] exportData;
+	return toRet;
 }

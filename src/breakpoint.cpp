@@ -1,10 +1,11 @@
 #include "breakpoint.h"
 
-breakpoint::breakpoint (void * address, breakpointType type, bool isOneHit)
+breakpoint::breakpoint (void * address, breakpointType type, bool isOneHit, bool apiLog)
 {
 	this->type = type;
 	this->address = address;
 	this->isOneHit = isOneHit;
+    this->apiLog = apiLog;
     hitCount = 0;
 }
 void breakpoint::incrementHitCount ()

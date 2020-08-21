@@ -34,7 +34,7 @@ class debugger
         void handleBreakpoint (EXCEPTION_DEBUG_INFO * exception, std::string, std::string);
         void handleSingleStep (EXCEPTION_DEBUG_INFO * exception, std::string, std::string);
         void breakpointEntryPoint (CREATE_PROCESS_DEBUG_INFO * info);
-        void placeSoftwareBreakpoint (void *, bool);
+        void placeSoftwareBreakpoint (void *, bool, bool);
         void interactiveCommands ();
         void handleCommands (command *);
         CONTEXT getContext (DWORD);
