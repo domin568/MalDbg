@@ -224,7 +224,7 @@ void* parseStringToAddress (std::string toConvert)
 }
 int parseStringToNumber (std::string toConvert, int base = 10)
 {
-    int number;
+    uint64_t number {0};
     if (base == 10)
     {
         sscanf (toConvert.c_str(), "%lli", &number);

@@ -77,7 +77,7 @@ struct _LDR_DATA_TABLE_ENTRY
     LIST_ENTRY StaticLinks;
 };
 
-typedef struct _PEB_LDR_DATA
+typedef struct _PEB_LDR_DATA64
 {
 	ULONG         Length;                            /* Size of structure, used by ntdll.dll as structure version ID */
 	uint32_t       Initialized;                       /* If set, loader data section for current process is initialized */
@@ -85,7 +85,17 @@ typedef struct _PEB_LDR_DATA
 	DWORD64    InLoadOrderModuleList           [2];             /* Pointer to LDR_DATA_TABLE_ENTRY structure. Previous and next module in load order */
 	DWORD64    InMemoryOrderModuleList         [2];           /* Pointer to LDR_DATA_TABLE_ENTRY structure. Previous and next module in memory placement order */
 	DWORD64    InInitializationOrderModuleList [2];   /* Pointer to LDR_DATA_TABLE_ENTRY structure. Previous and next module in initialization order */
-} PEB_LDR_DATA,*PPEB_LDR_DATA; // +0x24
+
+} PEB_LDR_DATA64,*PPEB_LDR_DATA64; // +0x24
+typedef struct _PEB_LDR_DATA32
+{
+	uint32_t         Length;                            /* Size of structure, used by ntdll.dll as structure version ID */
+	uint32_t       Initialized;                       /* If set, loader data section for current process is initialized */
+	uint32_t         SsHandle;
+	DWORD32    InLoadOrderModuleList           [2];             /* Pointer to LDR_DATA_TABLE_ENTRY structure. Previous and next module in load order */
+	DWORD32    InMemoryOrderModuleList         [2];           /* Pointer to LDR_DATA_TABLE_ENTRY structure. Previous and next module in memory placement order */
+	DWORD32    InInitializationOrderModuleList [2];   /* Pointer to LDR_DATA_TABLE_ENTRY structure. Previous and next module in initialization order */
+} PEB_LDR_DATA32,*PPEB_LDR_DATA32; // +0x24
   
 template <class T, class NGF, int A>
 struct _PEB_T
@@ -188,6 +198,27 @@ struct function
     uint64_t start;
     uint64_t end;
 };
+typedef struct _PROCESS_BASIC_INFORMATION64 {
+    NTSTATUS ExitStatus;
+    UINT32 Reserved0;
+    UINT64 PebBaseAddress;
+    UINT64 AffinityMask;
+    UINT32 BasePriority;
+    UINT32 Reserved1;
+    UINT64 UniqueProcessId;
+    UINT64 InheritedFromUniqueProcessId;
+} PROCESS_BASIC_INFORMATION64;
+
+typedef struct _PROCESS_BASIC_INFORMATION32 {
+    NTSTATUS ExitStatus;
+    UINT32 PebBaseAddress;
+    UINT32 AffinityMask;
+    UINT32 BasePriority;
+    UINT32 UniqueProcessId;
+    UINT32 InheritedFromUniqueProcessId;
+} PROCESS_BASIC_INFORMATION32;
+
+
  
 typedef _LDR_DATA_TABLE_ENTRY<DWORD> LDR_TABLE32;
 typedef _LDR_DATA_TABLE_ENTRY<DWORD64> LDR_TABLE64;

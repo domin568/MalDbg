@@ -22,10 +22,10 @@ std::string memoryRegion::toString ()
 	return name + " " + std::to_string (start) + " " + std::to_string (size) + " " + protection.toString() + " " + state + " " + type;
 }
 
-memoryMap::memoryMap (HANDLE processHandle, int wow64) 
+memoryMap::memoryMap (HANDLE processHandle, int is32bit) 
 {
 	this->processHandle = processHandle;
-	this->wow64 = wow64;
+	this->is32bit = is32bit;
 	stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
 }
 void memoryMap::setProtectStateType (MEMORY_BASIC_INFORMATION mbi, memoryRegion * region)
@@ -117,7 +117,6 @@ void memoryMap::updateMemoryMap ()
 	do
 	{
 		bytesReturned = VirtualQueryEx (processHandle, (LPVOID) pageStart, &mbi, sizeof(mbi));
-		baseRegion & actualBaseRegion = baseRegions.back ();
 
 		if (mbi.State != MEM_FREE)
 		{
@@ -155,10 +154,8 @@ void memoryMap::updateMemoryMap ()
 				std::vector <memoryRegion> regions;
 
 				memoryRegion header = baseRegion.memRegions[0];
-				std::wstring wName ( module.name, (module.nameSize <= 40 ? module.nameSize / 2 : 20));
-				std::string sName ( wName.begin(), wName.end() );
-				header.name = sName; // PWSTR to std::string
-				baseRegion.name = sName;
+				header.name = module.name; // PWSTR to std::string
+				baseRegion.name = module.name;
 				regions.push_back (header);
 
 				for ( auto & [key, val] : module.sections )
@@ -308,83 +305,38 @@ void memoryMap::setProtection (uint64_t address, uint64_t size, memoryProtection
 	{
 		DWORD err = GetLastError();
 		log ("Cannot change protection on page with address %.16llx err %.08x\n",logType::ERR, stdoutHandle, address, err);
-		throw std::exception ();
 	}
 }
-void * memoryMap::getPEBaddr ()
+void * memoryMap::getPEBaddr () // just for 64 bit env
 {
-    PROCESS_BASIC_INFORMATION processInfo;
+    PROCESS_BASIC_INFORMATION64 processInfo {};
     NtQueryInformationProcess () (processHandle, 0, &processInfo, sizeof (processInfo), nullptr); // 0 - ProcessBasicInformation
     return (void *) processInfo.PebBaseAddress;
 }
 std::vector <moduleData> memoryMap::getModulesLoaded ()
 {
-    void * PEBaddr = getPEBaddr ();
     std::vector <moduleData> modules;
-    if (wow64)
+    DWORD procId = GetProcessId (processHandle);
+
+   	DWORD snapshotFlag = (is32bit == 1 ? TH32CS_SNAPMODULE32 | TH32CS_SNAPMODULE : TH32CS_SNAPMODULE);
+
+   	HANDLE hSnapshot = CreateToolhelp32Snapshot(snapshotFlag, procId);
+    MODULEENTRY32 lpme;
+    bool firstStatus = Module32First(hSnapshot, &lpme);
+    if (!firstStatus)
     {
-        // to test 
+    	log ("Module32First error when getting modules loaded",logType::ERR, stdoutHandle);
     }
-    else
+    moduleData m;
+    m.VAaddress = (uint64_t) lpme.modBaseAddr;
+    m.name = std::string(lpme.szModule);
+    modules.push_back (m);
+    while (Module32Next (hSnapshot, &lpme))
     {
-        PEB64 peb;
-        if (!ReadProcessMemory (processHandle, (LPVOID) PEBaddr, &peb, sizeof (PEB64), NULL))
-        {
-            log ("Cannot read PEB64 of process \n", logType::ERR, stdoutHandle);
-            throw std::exception ();
-        }
-
-        PEB_LDR_DATA ldr;
-        if (!ReadProcessMemory (processHandle, (LPVOID) peb.Ldr, &ldr, sizeof (PEB_LDR_DATA), NULL))
-        {
-            log ("Cannot read peb.Ldr of process \n", logType::ERR, stdoutHandle);
-            throw std::exception ();
-        }
-        // till here good
-        LDR_TABLE64 currentModule;
-        if (!ReadProcessMemory (processHandle, (LPVOID) *ldr.InMemoryOrderModuleList, &currentModule, sizeof (LDR_TABLE64), NULL))
-        {
-            log ("Cannot read ldr.InMemoryOrderModuleList of process \n", logType::ERR, stdoutHandle);
-            throw std::exception ();
-        }
-        PWSTR dllName = (PWSTR) new uint8_t [currentModule.BaseDllName.Length];
-
-        if (!ReadProcessMemory (processHandle, (LPVOID) currentModule.BaseDllName._Buffer, dllName, currentModule.BaseDllName.Length, NULL))
-        {
-            log ("Cannot read UNICODE_STRING dllName \n", logType::ERR, stdoutHandle);
-            throw std::exception ();
-        }
-
-        moduleData m;
-        m.VAaddress = (uint64_t) currentModule.DllBase;
-        m.name = dllName;
-        m.nameSize = currentModule.BaseDllName.Length;
-        modules.push_back (m);
-
-        while (currentModule.InMemoryOrderLinks.Flink)
-        {
-            if (!ReadProcessMemory (processHandle, (LPVOID) currentModule.InMemoryOrderLinks.Flink, &currentModule, sizeof (LDR_TABLE64), NULL))
-            {
-                log ("Cannot read currentModule.InMemoryOrderLinks.Flink \n", logType::ERR, stdoutHandle);
-                throw std::exception ();
-            }   
-            if (!currentModule.DllBase)
-            {
-                break;
-            }
-            PWSTR dllN = (PWSTR) new uint8_t [currentModule.BaseDllName.Length];
-
-            if (!ReadProcessMemory (processHandle, (LPVOID) currentModule.BaseDllName._Buffer, dllN, currentModule.BaseDllName.Length, NULL))
-            {
-                log ("Cannot read UNICODE_STRING dllName \n", logType::ERR, stdoutHandle);
-                throw std::exception ();
-            }
-            m.VAaddress = (uint64_t) currentModule.DllBase;
-            m.name = dllN;
-            m.nameSize = currentModule.BaseDllName.Length;
-            modules.push_back (m);
-        }
-    }
+    	m.VAaddress = (uint64_t) lpme.modBaseAddr;
+       	m.name = std::string (lpme.szModule);
+       	modules.push_back (m);
+    }  
     return modules;
 }
 std::string memoryMap::getSectionNameForAddress (uint64_t addr)

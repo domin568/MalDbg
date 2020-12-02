@@ -87,7 +87,7 @@ class disassembler
 	 	void parseOperands ();
 	public:
 		const uint32_t MAX_INSTRUCTION_LENGTH = 15;
-		disassembler (uint64_t, std::map <uint64_t, symbol> const *, std::vector <function> const *);
+		disassembler (uint64_t, std::map <uint64_t, symbol> const *, std::vector <function> const *, bool);
 		~disassembler ();
 		void disasm (uint64_t, uint8_t *, uint32_t, uint32_t, std::vector <breakpoint> &);
 };

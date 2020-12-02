@@ -27,7 +27,7 @@ class PEparser
 
 	uint8_t ntHeaders [sizeof(IMAGE_NT_HEADERS64)];
 
-	int wow64 = false;
+	int is32bit = false;
 	int nSections;
 	bool virtualMode = false;
 	uint64_t sectionsHeadersOffset;
@@ -57,6 +57,7 @@ class PEparser
 	PEparser (HANDLE, uint64_t); // in virtual memory
 	PEparser (std::string); // exe file
 
+	bool is32bitPE ();
 	void * getEntryPoint (); 
 	uint64_t getCoffSymbolTableOffset (); 
 	uint32_t getCoffSymbolNumber (); 

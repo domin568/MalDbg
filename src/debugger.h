@@ -12,6 +12,7 @@
 #include <vector>
 #include <map>
 #include <memory>
+#include <ntstatus.h>
 #include "breakpoint.h"
 #include "memory.h"
 #include "utils.h"
@@ -55,6 +56,8 @@ class debugger
         void parseFunctionNamesIAT ();
         std::string getFunctionNameForAddress (uint64_t address);
         void showBacktrace ();
+        void showBacktrace64 ();
+        void showBacktrace32 ();
         
 
         CONTEXT currentContext; // shared resource, never used in paralel
@@ -63,6 +66,7 @@ class debugger
         
         uint64_t debuggedProcessBaseAddress;
         int32_t wow64;
+        bool is32bit;
 
     	std::string fileName;
 
@@ -78,10 +82,13 @@ class debugger
         bool bypassInterruptOnce = false;
         bool coffSymbolsLoaded = true;
         bool systemBreakpoint = true;
+        bool apilogSession = false;
 
     	std::mutex m_debuggingActive;
     	std::mutex m_debuggerActive;
 
+        std::vector < std::map <uint64_t, std::string> > modulesExports;
+        std::map <uint64_t, std::string> globalExportNames;
         std::vector <breakpoint> breakpoints;
         std::vector <memoryRegion> memoryRegions;
         std::vector <function> functionNames;

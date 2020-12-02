@@ -28,6 +28,7 @@ breakpoint * debugger::searchForBreakpoint (std::vector <breakpoint> & b, void *
 }
 void * debugger::getNextInstructionAddress (void * ref)
 {
+    cs_mode mode = (is32bit ? CS_MODE_32 : CS_MODE_64);
     uint8_t * codeBuffer = new uint8_t [50];
     if (!ReadProcessMemory (debuggedProcessHandle, (LPCVOID) ref, codeBuffer, 50 , NULL))
     {
@@ -39,7 +40,7 @@ void * debugger::getNextInstructionAddress (void * ref)
     cs_insn *insn;
     size_t count;
 
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK)
+    if (cs_open(CS_ARCH_X86, mode, &handle) != CS_ERR_OK)
     {
         delete codeBuffer;
         return nullptr;
@@ -54,14 +55,14 @@ void * debugger::getNextInstructionAddress (void * ref)
     }
     else
     {
-        delete codeBuffer;
+        delete [] codeBuffer ;
         return nullptr;
     }
     
 }
 void debugger::disasmAt (void * address, int numberOfInstructions)
 {
-    static disassembler d {debuggedProcessBaseAddress, &COFFsymbols, &functionNames};
+    static disassembler d {debuggedProcessBaseAddress, &COFFsymbols, &functionNames, is32bit};
     std::vector <breakpoint *> disassembledBreakpoints;
     uint8_t * codeBuffer = new uint8_t [numberOfInstructions * d.MAX_INSTRUCTION_LENGTH];
     uint64_t readBytes;
@@ -74,18 +75,14 @@ void debugger::disasmAt (void * address, int numberOfInstructions)
     {
         log ("Could read only %i bytes of memory at %.16llx\n",logType::ERR, stdoutHandle,readBytes , address);
     }
-    /*
-    memoryHelper h (debuggedProcessHandle, stdoutHandle);
-    h.printHexdump (address, readBytes);
-    */
     d.disasm ((uint64_t) address, codeBuffer, readBytes, numberOfInstructions, breakpoints);    
-    delete codeBuffer;
+    delete [] codeBuffer;
 }
 CONTEXT debugger::getContext (DWORD flags)
 {
     CONTEXT lcContext;
     lcContext.ContextFlags = flags;
-    HANDLE threadHandle = OpenThread (THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME, FALSE, currentDebugEvent.dwThreadId);
+    HANDLE threadHandle = OpenThread (THREAD_GET_CONTEXT | THREAD_SUSPEND_RESUME | THREAD_QUERY_INFORMATION, FALSE, currentDebugEvent.dwThreadId);
     if (threadHandle == NULL)
     {
         log ("Cannot get thread handle when getting context \n",logType::ERR, stdoutHandle);
@@ -228,13 +225,20 @@ DWORD debugger::run (std::string fileName)
 
         DWORD debugResponse = processDebugEvents(&currentDebugEvent, &debuggingActive);
 
+        if (apilogSession)
+        {
+            setContext (this->currentContext);
+            ContinueDebugEvent (currentDebugEvent.dwProcessId,currentDebugEvent.dwThreadId,debugResponse); 
+            continue;
+        }
+
         if (!bypassInterruptOnce)
         {
             checkInterruptEvent ();          
             setContext (this->currentContext);
             ContinueDebugEvent (currentDebugEvent.dwProcessId,currentDebugEvent.dwThreadId,debugResponse); 
         }
-        else 
+        else
         {
             bypassInterruptOnce = false;
             setContext (this->currentContext);
@@ -273,6 +277,7 @@ bool debugger::deleteBreakpointByIndex (uint64_t number)
     {
         breakpoints.erase (breakpoints.begin() + number);
     }
+    return true;
 }
 void debugger::setRegisterWithValue (std::string registerString, uint64_t value)
 {
@@ -362,24 +367,22 @@ std::string debugger::getFunctionNameForAddress (uint64_t address)
 }
 void debugger::showBacktrace ()
 {
-    // CaptureStackBackTrace
-    //std::vector<CALLSTACKENTRY> callstackVector;
+    (wow64 == 1 ? showBacktrace32 () : showBacktrace64() );
+}
+void debugger::showBacktrace32 ()
+{
+    // TODOOOOOOOOO
+}
+void debugger::showBacktrace64 ()
+{
     const int MaxNameLen = 256;
     CONTEXT context = getContext(CONTEXT_CONTROL | CONTEXT_INTEGER);
-
     char buffer[sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR)];
-    char name[MaxNameLen];
-    char module[MaxNameLen];
     PSYMBOL_INFO pSymbol = (PSYMBOL_INFO)buffer;
-
     DWORD64             displacement;
-
     DWORD disp;
-
     STACKFRAME64 frame;
-
     ZeroMemory(&frame, sizeof(STACKFRAME64));
-
     DWORD machineType = IMAGE_FILE_MACHINE_AMD64;
 
     frame.AddrPC.Offset = context.Rip;
@@ -392,9 +395,6 @@ void debugger::showBacktrace ()
     frame.AddrStack.Mode = AddrModeFlat;
 
     const int MaxWalks = 50;
-    // Container for each callstack entry (50 pre-allocated entries)
-    //callstackVector.clear();
-    //callstackVector.reserve(MaxWalks);
 
     HANDLE hThread = getCurrentThread ();
     if (hThread == NULL)
@@ -402,11 +402,13 @@ void debugger::showBacktrace ()
         log ("Cannot get handle to current thread when backtracing\n", logType::ERR, stdoutHandle);
         return;
     }
-    SymInitialize(debuggedProcessHandle, NULL, TRUE ); // ?????? 
+    SymInitialize(debuggedProcessHandle, NULL, TRUE );
     currentMemoryMap->updateMemoryMap ();
 
     for (int i = 0; i < MaxWalks; i++)
     {
+        ZeroMemory(pSymbol, sizeof(SYMBOL_INFO) + MAX_SYM_NAME * sizeof(TCHAR));
+
         if(!StackWalk64(
                     machineType,
                     debuggedProcessHandle,
@@ -424,6 +426,7 @@ void debugger::showBacktrace ()
         pSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
         pSymbol->MaxNameLen = MAX_SYM_NAME;
         SymFromAddr(debuggedProcessHandle, ( ULONG64 )frame.AddrPC.Offset, &displacement, pSymbol);
+
         size_t symbolNameSize = strlen (pSymbol->Name);
 
         std::string internalSymbolName = getFunctionNameForAddress(frame.AddrPC.Offset);
@@ -576,7 +579,7 @@ void debugger::handleCommands(command * currentCommand)
     {
         std::vector <uint64_t> moduleBases = currentMemoryMap->getModulesAddr ();
         uint64_t sizeMemTrampoline = 0;
-        std::vector < std::map <uint64_t, std::string> > modulesExports;
+        //std::vector < std::map <uint64_t, std::string> > modulesExports;
         for (const auto & i : moduleBases)
         {
             PEparser p (debuggedProcessHandle, i);
@@ -590,6 +593,7 @@ void debugger::handleCommands(command * currentCommand)
                 placeSoftwareBreakpoint ( (void *) addr, false, true);
             }
         }
+        apilogSession = true;
     }
 }
 void debugger::interactiveCommands ()
@@ -628,7 +632,7 @@ void debugger::interactive ()
     if (!interactiveMode)
     {
         interactiveMode = true;
-        commandThread = std::thread (debugger::interactiveCommands, this);
+        commandThread = std::thread (&debugger::interactiveCommands, this);
         commandThread.join ();
     }
     interactiveMode = false;
@@ -653,12 +657,15 @@ debugger::debugger (std::string fileName)
     interruptingExceptions.insert (EXCEPTION_ACCESS_VIOLATION);
     interruptingExceptions.insert (EXCEPTION_ILLEGAL_INSTRUCTION);
     interruptingExceptions.insert (EXCEPTION_SINGLE_STEP);
+    interruptingExceptions.insert (STATUS_WX86_BREAKPOINT);
+    interruptingExceptions.insert (STATUS_WX86_SINGLE_STEP);
+
 
     stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
     commandEvent = CreateEventA (NULL,false,false,"commandEvent");
     continueDebugEvent = CreateEventA (NULL,false,false,"continueDebugEvent");
     this->fileName = fileName;
-    debuggerThread = std::thread(debugger::run, this, fileName);
+    debuggerThread = std::thread(&debugger::run, this, fileName);
 }
 void debugger::handleSingleStep (EXCEPTION_DEBUG_INFO * exception, std::string sectionName, std::string moduleName)
 {
@@ -690,7 +697,26 @@ void debugger::handleBreakpoint (EXCEPTION_DEBUG_INFO * exception, std::string s
     if (bp && bp->getType() == breakpointType::SOFTWARE_TYPE) // user breakpoint
     {
         bp->incrementHitCount ();
-        log ("User software breakpoint reached at 0x%.16llx <%s->%s>\n",logType::INFO, stdoutHandle, breakpointAddress, moduleName.c_str(), sectionName.c_str());
+
+        // check name of symbol TODO IN MAP
+
+        if (modulesExports.size() > 0)
+        {
+            for (const auto & moduleExports : modulesExports)
+            {
+                for (auto const & [addr, name] : moduleExports)
+                {
+                    if (addr == breakpointAddress)
+                    {
+                        log ("User software breakpoint reached at %s <%s->%s>\n",logType::INFO, stdoutHandle, name.c_str() , moduleName.c_str(), sectionName.c_str());
+                    }
+                }
+            }
+        }
+        else
+        {
+            log ("User software breakpoint reached at 0x%.16llx <%s->%s>\n",logType::INFO, stdoutHandle, breakpointAddress, moduleName.c_str(), sectionName.c_str());
+        }
         if (!bp->restore(debuggedProcessHandle))// restore original byte to continue execution
         {
             log ("Cannot restore breakpoint at 0x%.16llx <%s->%s>\n",logType::INFO, stdoutHandle, breakpointAddress, moduleName.c_str(), sectionName.c_str());   
@@ -735,8 +761,14 @@ DWORD debugger::processCreateProcess (DEBUG_EVENT * event)
     char * moduleName = PathFindFileNameA(modulePath + 4);
 
     debuggedProcessBaseAddress = (uint64_t) info->lpBaseOfImage;
+
+    PEparser parser (moduleNameString);
+    is32bit = parser.is32bitPE ();
+    std::string entrypointSectionName = parser.getSectionNameForAddress ((uint64_t)info->lpStartAddress - (uint64_t)info->lpBaseOfImage); 
+    log ("%s loaded, base 0x%.16llx entrypoint 0x%.16llx <%.8s>\n",logType::INFO, stdoutHandle, moduleName, info->lpBaseOfImage, info->lpStartAddress, entrypointSectionName.c_str());
+
     checkWOW64 ();
-    currentMemoryMap = new memoryMap (debuggedProcessHandle, wow64);
+    currentMemoryMap = new memoryMap (debuggedProcessHandle, is32bit);
     
     if (!parseSymbols (moduleNameString))
     {
@@ -745,10 +777,6 @@ DWORD debugger::processCreateProcess (DEBUG_EVENT * event)
         // parse IAT names
     }
     
-    PEparser parser (moduleNameString);
-    std::string entrypointSectionName = parser.getSectionNameForAddress ((uint64_t)info->lpStartAddress - (uint64_t)info->lpBaseOfImage); 
-    log ("%s loaded, base 0x%.16llx entrypoint 0x%.16llx <%.8s>\n",logType::INFO, stdoutHandle, moduleName, info->lpBaseOfImage, info->lpStartAddress, entrypointSectionName.c_str());
-
     breakpointEntryPoint (info);
 
     delete [] modulePath;
@@ -757,7 +785,7 @@ DWORD debugger::processCreateProcess (DEBUG_EVENT * event)
 DWORD debugger::processExceptions (DEBUG_EVENT * event)
 {
     EXCEPTION_DEBUG_INFO * exception = &event->u.Exception;
-    if (exception->ExceptionRecord.ExceptionCode != EXCEPTION_BREAKPOINT && exception->ExceptionRecord.ExceptionCode != EXCEPTION_SINGLE_STEP)
+    if (exception->ExceptionRecord.ExceptionCode != EXCEPTION_BREAKPOINT && exception->ExceptionRecord.ExceptionCode != EXCEPTION_SINGLE_STEP && exception->ExceptionRecord.ExceptionCode != STATUS_WX86_BREAKPOINT && exception->ExceptionRecord.ExceptionCode != STATUS_WX86_SINGLE_STEP )
     {
         if (exception->dwFirstChance)
         {
@@ -769,6 +797,7 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
         }   
     }
     currentMemoryMap->updateMemoryMap ();
+
     std::string sectionName = currentMemoryMap->getSectionNameForAddress ((uint64_t) exception->ExceptionRecord.ExceptionAddress);
     std::string moduleName = currentMemoryMap->getImageNameForAddress((uint64_t) exception->ExceptionRecord.ExceptionAddress);
     switch (exception->ExceptionRecord.ExceptionCode)
@@ -783,6 +812,7 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
                     );
             return DBG_EXCEPTION_NOT_HANDLED;
         }
+        case STATUS_WX86_BREAKPOINT:
         case EXCEPTION_BREAKPOINT:
         {
             handleBreakpoint (exception, sectionName, moduleName);
@@ -806,6 +836,7 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
                    );  
             return DBG_EXCEPTION_NOT_HANDLED;
         }
+        case STATUS_WX86_SINGLE_STEP:
         case EXCEPTION_SINGLE_STEP:
         {
             handleSingleStep (exception, sectionName, moduleName);
@@ -813,8 +844,9 @@ DWORD debugger::processExceptions (DEBUG_EVENT * event)
         }
         default:
         {
-            log ("Not implemented exception yet at 0x%.16llx <%s->%s>\n",
+            log ("Not implemented exception (%.16llx) yet at 0x%.16llx <%s->%s>\n",
                  logType::UNKNOWN_EVENT,
+                 exception->ExceptionRecord.ExceptionAddress,
                  stdoutHandle,exception->ExceptionRecord.ExceptionAddress,
                  moduleName.c_str(),
                  sectionName.c_str()
@@ -903,7 +935,6 @@ DWORD debugger::processDebugEvents (DEBUG_EVENT * event, bool * debuggingActive)
         case CREATE_THREAD_DEBUG_EVENT:
         {
             CREATE_THREAD_DEBUG_INFO * infoThread = &event->u.CreateThread;
-            currentMemoryMap->updateMemoryMap ();
             std::string sectionName = currentMemoryMap->getSectionNameForAddress ((uint64_t) infoThread->lpStartAddress);
             std::string moduleName = currentMemoryMap->getImageNameForAddress((uint64_t) infoThread->lpStartAddress);
             log ("Thread 0x%x created with entry address 0x%.16llx <%s->%s>\n", logType::THREAD, stdoutHandle, event->dwThreadId, infoThread->lpStartAddress, moduleName.c_str(), sectionName.c_str());

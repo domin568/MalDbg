@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <inttypes.h>
+#include <tlhelp32.h>
 #include <vector>
 #include "utils.h"
 #include "structs.h"
@@ -28,8 +29,7 @@ struct memoryProtection
 struct moduleData
 {
     uint64_t VAaddress;
-    PWSTR name;
-    uint32_t nameSize;
+    std::string name;
     std::map <uint64_t, section> sections;
 };
 
@@ -59,7 +59,7 @@ class memoryMap
 		HANDLE processHandle;
 		HANDLE stdoutHandle;
 		std::vector <baseRegion> baseRegions;
-		int wow64;
+		int is32bit;
 
 		void setProtectStateType (MEMORY_BASIC_INFORMATION mbi, memoryRegion *);
 		DWORD memoryProtectionToDWORD (memoryProtection);

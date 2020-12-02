@@ -1,7 +1,8 @@
 #include "disassembly.h"
 
-disassembler::disassembler(uint64_t baseAddress, std::map <uint64_t, symbol> const * symbols, std::vector <function> const * functionNames)
+disassembler::disassembler(uint64_t baseAddress, std::map <uint64_t, symbol> const * symbols, std::vector <function> const * functionNames, bool is32bit)
 {
+    cs_mode mode = (is32bit ? CS_MODE_32 : CS_MODE_64);
 	stdoutHandle = GetStdHandle(STD_OUTPUT_HANDLE);
 	this->baseAddress = baseAddress;
 	this->symbols = symbols;
@@ -9,7 +10,7 @@ disassembler::disassembler(uint64_t baseAddress, std::map <uint64_t, symbol> con
 
 	defaultColor = getCurrentPromptColor (stdoutHandle);
 
-    if (cs_open(CS_ARCH_X86, CS_MODE_64, &handle) != CS_ERR_OK)
+    if (cs_open(CS_ARCH_X86, mode, &handle) != CS_ERR_OK)
     {
     	log ("Cannot initialize capstone disassemble\n",logType::ERR, stdoutHandle);
         return;
